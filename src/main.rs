@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use clap::Parser;
 use reqwest;
 
@@ -18,23 +20,38 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    let client = reqwest::Client::new();
 
     println!("DEBUG: Configuração capturada: {:?}", args);
 
     println!("🎯 Alvo: {}", args.url);
     println!("🚀 Preparando o canhão para {} disparo(s)...", args.count);
 
-    let client = reqwest::Client::new();
+    let start_test = Instant::now();
 
-    let response = client.get(&args.url).send().await?;
+    for i in 1..=args.count {
+        let start_request = Instant::now();
 
-    println!("✅ Status: {}", response.status());
+        let response = client.get(&args.url).send().await;
 
-    if response.status().is_success(){
-        println!("💥 Tiro certeiro! O servidor respondeu com sucesso.");
-    } else {
-        println!("⚠️ O servidor recebeu o impacto, mas retornou um erro.");
+        match response {
+            Ok(res) => {
+                let duration = start_request.elapsed();
+                println!(
+                    "Tiro #{}: Status {} - Tempo: {:?}",
+                    i,
+                    res.status(),
+                    duration
+                );
+            }
+            Err(e) => {
+                println!("Tiro #{}: ❌ FALHA - Erro: {}", i, e);
+            }
+        }
     }
+
+    let total_duration = start_test.elapsed();
+    println!("\n🏁 Teste finalizado em {:?}", total_duration);
 
     Ok(())
 }
