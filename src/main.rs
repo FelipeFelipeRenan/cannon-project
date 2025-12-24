@@ -2,8 +2,12 @@ use std::{sync::Arc, time::Instant};
 
 use clap::Parser;
 use hdrhistogram::Histogram;
+use indicatif::{ProgressBar, ProgressStyle};
 use reqwest;
-use tokio::{sync::{Semaphore, mpsc}, task};
+use tokio::{
+    sync::{mpsc, Semaphore},
+    task,
+};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -35,67 +39,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let url = Arc::new(args.url);
 
     let (tx, mut rx) = mpsc::channel(args.count as usize);
+    let semaphore = Arc::new(Semaphore::new(args.workers as usize));
 
     println!("🎯 Alvo: {}", url);
     println!("🚀 Preparando o canhão para {} disparo(s)...", args.count);
 
-    //let start_test = Instant::now();
+    let start_test = Instant::now();
 
-    let semaphore = Arc::new(Semaphore::new(args.workers as usize));
- 
-    for _ in 0..args.count {
+    tokio::spawn(async move {
+        for _ in 0..args.count {
+            let permit = Arc::clone(&semaphore).acquire_owned().await.unwrap();
 
-        let permit = Arc::clone(&semaphore).acquire_owned().await.unwrap();
+            let client_clone = Arc::clone(&client);
 
-        let client_clone = Arc::clone(&client);
+            let url_clone = Arc::clone(&url);
 
-        let url_clone = Arc::clone(&url);
+            let tx_clone = tx.clone();
 
-        let tx_clone = tx.clone();
+            task::spawn(async move {
+                let _permit = permit;
+                let start_request = Instant::now();
 
-        task::spawn(async move {
-            let _permit = permit;
-            let start_request = Instant::now();
+                let response = client_clone.get(url_clone.as_str()).send().await;
 
-            let response = client_clone.get(url_clone.as_str()).send().await;
+                let success = response.is_ok() && response.unwrap().status().is_success();
 
-            let success = response.is_ok() && response.unwrap().status().is_success();
-
-            let _ = tx_clone
-                .send(ShotResult {
+                let _ = tx_clone.send(ShotResult{
                     success,
                     duration: start_request.elapsed(),
-                })
-                .await;
-        });
-    }
-
-    drop(tx);
+                }).await;
+            });
+        }
+    });
 
     let mut success_count = 0;
     let mut failure_count = 0;
     //let mut total_latency = std::time::Duration::new(0, 0);
 
     let mut hist = Histogram::<u64>::new_with_bounds(1, 60_000, 3).unwrap();
+    let progress_bar = ProgressBar::new(args.count as u64);
+    progress_bar.set_style(
+        ProgressStyle::default_bar()
+            .template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
+            )
+            .unwrap()
+            .progress_chars("#>-"),
+    );
 
     while let Some(result) = rx.recv().await {
+        progress_bar.inc(1);
         if result.success {
             success_count += 1;
 
-            hist.record(result.duration.as_millis() as u64).unwrap();
+            hist.record(result.duration.as_micros() as u64).unwrap();
         } else {
             failure_count += 1;
         }
     }
+
+    progress_bar.finish_with_message("Concluído");
 
     println!("\n--- 🏁 RELATÓRIO DO CANNON ---");
     println!("Sucessos:         {}", success_count);
     println!("Falhas:           {}", failure_count);
     println!("Mínimo:           {}ms", hist.min());
     println!("Média:            {:.2}ms", hist.mean());
-    println!("p50 (Mediana):    {}ms", hist.value_at_quantile(0.5));
-    println!("p95:              {}ms", hist.value_at_quantile(0.95));
-    println!("p99:              {}ms", hist.value_at_quantile(0.99));
-    println!("Máximo:           {}ms", hist.max());
+    println!("p50 (Mediana):    {}us", hist.value_at_quantile(0.5));
+    println!("p95:              {}us", hist.value_at_quantile(0.95));
+    println!("p99:              {}us", hist.value_at_quantile(0.99));
+    println!("Máximo:           {}us\n", hist.max());
+    println!("-------------------------");
+    println!("Teste finalizado em {}s", start_test.elapsed().as_secs());
+    
     Ok(())
 }
