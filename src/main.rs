@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Instant};
 
 use clap::Parser;
+use hdrhistogram::Histogram;
 use reqwest;
 use tokio::{sync::mpsc, task};
 
@@ -35,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🎯 Alvo: {}", url);
     println!("🚀 Preparando o canhão para {} disparo(s)...", args.count);
 
-    let start_test = Instant::now();
+    //let start_test = Instant::now();
 
     for _ in 0..args.count {
         let client_clone = Arc::clone(&client);
@@ -64,26 +65,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut success_count = 0;
     let mut failure_count = 0;
-    let mut total_latency = std::time::Duration::new(0, 0);
+    //let mut total_latency = std::time::Duration::new(0, 0);
+
+    let mut hist = Histogram::<u64>::new_with_bounds(1, 60_000, 3).unwrap();
 
     while let Some(result) = rx.recv().await {
         if result.success {
             success_count += 1;
-            total_latency += result.duration;
+
+            hist.record(result.duration.as_millis() as u64).unwrap();
         } else {
             failure_count += 1;
         }
     }
 
-    let duration = start_test.elapsed();
     println!("\n--- 🏁 RELATÓRIO DO CANNON ---");
-    println!("Tempo total: {:?}", duration);
     println!("Sucessos:    {}", success_count);
     println!("Falhas:      {}", failure_count);
-    
-    if success_count > 0{
-        println!("Média:   {:?}", total_latency / success_count);
-    }
-
+    println!("Mínimo:      {}ms", hist.min());
+    println!("Média:       {:.2}ms", hist.mean());
+    println!("p50 (Mediana): {}ms", hist.value_at_quantile(0.5));
+    println!("p95:         {}ms", hist.value_at_quantile(0.95));
+    println!("p99:         {}ms", hist.value_at_quantile(0.99));
+    println!("Máximo:      {}ms", hist.max());
     Ok(())
 }
