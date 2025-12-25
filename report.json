@@ -1,0 +1,13 @@
+{
+  "target": "http://localhost:8081/api/v1/accounts",
+  "total_requests": 1000,
+  "concurrency": 10,
+  "successes": 1000,
+  "failures": 0,
+  "min_ms": 2.848,
+  "avg_ms": 19.959,
+  "p50_ms": 16.639,
+  "p95_ms": 47.519,
+  "p99_ms": 81.087,
+  "max_ms": 128.639
+}
