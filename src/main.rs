@@ -3,8 +3,10 @@ mod engine;
 mod report;
 
 use crate::args::Args;
+use crate::report::LatencyMetrics;
 use crate::report::{to_ms, FinalReport};
 use clap::Parser;
+use colored::Colorize;
 use hdrhistogram::Histogram;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::Arc;
@@ -19,8 +21,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (tx, mut rx) = mpsc::channel(args.count as usize);
 
-    println!("🎯 Alvo: {}", url);
-    println!("🚀 Preparando o canhão para {} disparo(s)...", args.count);
+    print_banner();
+
+    println!("🎯 Alvo: {}", url.bright_cyan().bold());
+    println!(
+        "🚀 {}",
+        format!(
+            "Preparando o canhão para {} disparo(s) com {} workers...",
+            args.count.to_string().cyan(),
+            args.workers.to_string().magenta()
+        )
+        .bold()
+    );
 
     let start_test = Instant::now();
 
@@ -40,16 +52,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let pb = ProgressBar::new(args.count as u64);
     pb.set_style(
-        ProgressStyle::default_bar()
-            .template(
-                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
-            )?
-            .progress_chars("#>-"),
-    );
+    ProgressStyle::default_bar()
+        .template("{spinner:.bold.green} [{elapsed_precise}] {bar:40.magenta/blue} {pos:>7}/{len:7} {msg}")
+        .unwrap()
+        .progress_chars("━╾─"), // Gradiente de blocos Unicode
+);
 
     // Consumidor: Coleta resultados enquanto eles chegam
     while let Some(result) = rx.recv().await {
         pb.inc(1);
+        let elapsed = start_test.elapsed().as_secs_f64();
+        if elapsed > 0.0 {
+            let rps = success_count as f64 / elapsed;
+            pb.set_message(format!("| ⚡ {} RPS", rps as u32));
+        }
         if result.success {
             success_count += 1;
             let _ = hist.record(result.duration.as_micros() as u64);
@@ -65,32 +81,61 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Exportação JSON
     if let Some(path) = &args.output {
-        save_report(
-            &path,
-            &args,
-            &url,
-            success_count,
-            failure_count,
-            &hist,
-        )?;
+        save_report(&path, &args, &url, success_count, failure_count, &hist)?;
     }
 
     Ok(())
 }
 
 fn print_summary(successes: u64, failures: u64, hist: &Histogram<u64>, total: std::time::Duration) {
-    println!("\n--- 🏁 RELATÓRIO DO CANNON ---");
+    println!("\n{}", "--- 🏁 RELATÓRIO DO CANNON ---".bold().underline());
     println!("Sucessos:     {}", successes);
     println!("Falhas:       {}", failures);
 
+    let mut metrics = Vec::new();
     if successes > 0 {
-        println!("Mínimo:       {:.2}ms", to_ms(hist.min()));
-        println!("Média:        {:.2}ms", to_ms(hist.mean() as u64));
-        println!("p50:          {:.2}ms", to_ms(hist.value_at_quantile(0.5)));
-        println!("p95:          {:.2}ms", to_ms(hist.value_at_quantile(0.95)));
-        println!("p99:          {:.2}ms", to_ms(hist.value_at_quantile(0.99)));
-        println!("Máximo:       {:.2}ms", to_ms(hist.max()));
+        let to_ms_str = |v| format!("{:.2}ms", to_ms(v));
+        metrics.push(LatencyMetrics {
+            metric: "Mínimo".to_string(),
+            value: to_ms_str(hist.min()),
+        });
+        metrics.push(LatencyMetrics {
+            metric: "Média".to_string(),
+            value: to_ms_str(hist.mean() as u64),
+        });
+        metrics.push(LatencyMetrics {
+            metric: "p50 (Mediana)".to_string(),
+            value: to_ms_str(hist.value_at_quantile(0.5)),
+        });
+        metrics.push(LatencyMetrics {
+            metric: "p95".to_string(),
+            value: to_ms_str(hist.value_at_quantile(0.95)),
+        });
+        metrics.push(LatencyMetrics {
+            metric: "p99".to_string(),
+            value: to_ms_str(hist.value_at_quantile(0.99)),
+        });
+        metrics.push(LatencyMetrics {
+            metric: "Máximo".to_string(),
+            value: to_ms_str(hist.max()),
+        });
     }
+
+    let table = tabled::Table::new(metrics)
+        .with(tabled::settings::Style::modern())
+        .to_string();
+
+    println!("{}", table);
+    println!(
+        "{} {} | {} {} | {} {:?}",
+        "✅ Sucessos:".green().bold(),
+        successes.to_string().bright_white(),
+        "❌ Falhas:".red().bold(),
+        failures.to_string().bright_white(),
+        "⏱️ Tempo Total:".cyan().bold(),
+        total
+    );
+
     println!("-------------------------");
     println!("Teste finalizado em {}s", total.as_secs());
 }
@@ -120,4 +165,23 @@ fn save_report(
     std::fs::write(path, json)?;
     println!("📂 Relatório salvo com sucesso!");
     Ok(())
+}
+
+fn print_banner() {
+    let banner = r#"
+      _____          _   _ _   _  ____  _   _ 
+     / ____|   /\   | \ | | \ | |/ __ \| \ | |
+    | |       /  \  |  \| |  \| | |  | |  \| |
+    | |      / /\ \ | . ` | . ` | |  | | . ` |
+    | |____ / ____ \| |\  | |\  | |__| | |\  |
+     \_____/_/    \_\_| \_|_| \_|\____/|_| \_|
+    "#;
+    println!("{}", banner.bright_red().bold());
+    println!(
+        "{}",
+        "--- The High-Velocity Load Tester ---"
+            .bright_black()
+            .italic()
+    );
+    println!();
 }
