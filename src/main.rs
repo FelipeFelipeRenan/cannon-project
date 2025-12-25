@@ -76,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut failure_count = 0;
     //let mut total_latency = std::time::Duration::new(0, 0);
 
-    let mut hist = Histogram::<u64>::new_with_bounds(1, 60_000, 3).unwrap();
+    let mut hist = Histogram::<u64>::new_with_bounds(1, 60_000_000, 3).unwrap();
     let progress_bar = ProgressBar::new(args.count as u64);
     progress_bar.set_style(
         ProgressStyle::default_bar()
@@ -92,7 +92,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if result.success {
             success_count += 1;
 
-            hist.record(result.duration.as_micros() as u64).unwrap();
+           let micros = result.duration.as_micros() as u64;
+            
+            if let Err(e) = hist.record(micros){
+                eprintln!("{}", e);
+                eprintln!("Aviso: valor fora do limite: {}us", micros);
+            }
         } else {
             failure_count += 1;
         }
@@ -103,12 +108,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- 🏁 RELATÓRIO DO CANNON ---");
     println!("Sucessos:         {}", success_count);
     println!("Falhas:           {}", failure_count);
-    println!("Mínimo:           {}ms", hist.min());
-    println!("Média:            {:.2}ms", hist.mean());
-    println!("p50 (Mediana):    {}us", hist.value_at_quantile(0.5));
-    println!("p95:              {}us", hist.value_at_quantile(0.95));
-    println!("p99:              {}us", hist.value_at_quantile(0.99));
-    println!("Máximo:           {}us\n", hist.max());
+
+    if success_count > 0 {
+    // Função utilitária interna para facilitar a conversão de us para ms
+    let to_ms = |us: u64| us as f64 / 1000.0;
+
+    println!("Mínimo:      {:.2}ms", to_ms(hist.min()));
+    println!("Média:       {:.2}ms", to_ms(hist.mean() as u64));
+    println!("p50:         {:.2}ms", to_ms(hist.value_at_quantile(0.5)));
+    println!("p95:         {:.2}ms", to_ms(hist.value_at_quantile(0.95)));
+    println!("p99:         {:.2}ms", to_ms(hist.value_at_quantile(0.99)));
+    println!("Máximo:      {:.2}ms", to_ms(hist.max()));
+}
+
     println!("-------------------------");
     println!("Teste finalizado em {}s", start_test.elapsed().as_secs());
     
