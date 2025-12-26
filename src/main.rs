@@ -119,6 +119,9 @@ fn print_summary(successes: u64, failures: u64, hist: &Histogram<u64>, total: st
             metric: "Máximo".to_string(),
             value: to_ms_str(hist.max()),
         });
+
+        report::render_ascii_histogram(hist);
+        println!("\n{}", "-------------------------".bright_black());
     }
 
     let table = tabled::Table::new(metrics)
