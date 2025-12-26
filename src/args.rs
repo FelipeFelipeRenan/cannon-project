@@ -14,4 +14,8 @@ pub struct Args {
 
     #[arg(short, long)]
     pub output: Option<String>,
+
+    #[arg(short, long)]
+    pub rps: Option<u32>,
+
 }

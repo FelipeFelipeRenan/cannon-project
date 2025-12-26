@@ -43,6 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&url),
         client,
         tx,
+        args.rps,
     ));
 
     // Configura UI e Métricas
