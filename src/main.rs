@@ -63,9 +63,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     while let Some(result) = rx.recv().await {
         pb.inc(1);
         let elapsed = start_test.elapsed().as_secs_f64();
-        if elapsed > 0.0 {
-            let rps = success_count as f64 / elapsed;
-            pb.set_message(format!("| ⚡ {} RPS", rps as u32));
+        if elapsed > 0.1 {
+            let rps = (success_count + failure_count) as f64 / elapsed;
+            pb.set_message(format!("| ⚡ {:.1} RPS", rps));
         }
         if result.success {
             success_count += 1;
@@ -78,7 +78,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     pb.finish_with_message("Concluído");
 
     // Impressão do Relatório
-    print_summary(success_count, failure_count, &hist, start_test.elapsed());
+    print_summary(
+        success_count,
+        failure_count,
+        &hist,
+        start_test.elapsed(),
+        args.rps,
+    );
 
     // Exportação JSON
     if let Some(path) = &args.output {
@@ -88,7 +94,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn print_summary(successes: u64, failures: u64, hist: &Histogram<u64>, total: std::time::Duration) {
+fn print_summary(
+    successes: u64,
+    failures: u64,
+    hist: &Histogram<u64>,
+    total: std::time::Duration,
+    target_rps: Option<u32>,
+) {
     println!("\n{}", "--- 🏁 RELATÓRIO DO CANNON ---".bold().underline());
     println!("Sucessos:     {}", successes);
     println!("Falhas:       {}", failures);
@@ -139,6 +151,27 @@ fn print_summary(successes: u64, failures: u64, hist: &Histogram<u64>, total: st
         "⏱️ Tempo Total:".cyan().bold(),
         total
     );
+
+    let total_secs = total.as_secs_f64();
+    let actual_rps = successes as f64 / total_secs;
+
+    println!("\n{}", "📈 EFICIÊNCIA DO CANHÃO".bold().bright_white());
+
+    if let Some(target) = target_rps {
+        let efficiency = (actual_rps / target as f64) * 100.0;
+        let rps_str = format!("{:.2}", actual_rps).yellow();
+        println!("RPS Alvo:      {}", target.to_string().cyan());
+        println!(
+            "RPS Real:      {:.2} ({:.1}%)",
+            rps_str,
+            efficiency
+        );
+    } else {
+        println!(
+            "RPS Médio:     {:.2} req/s",
+            actual_rps.to_string().yellow()
+        );
+    }
 
     println!("-------------------------");
     println!("Teste finalizado em {}s", total.as_secs());
