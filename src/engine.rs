@@ -13,6 +13,7 @@ pub async fn run_producer(
     client: Arc<reqwest::Client>,
     tx: mpsc::Sender<ShotResult>,
     rps: Option<u32>,
+    body: Option<String>,
 ) {
     let semaphore = Arc::new(Semaphore::new(workers as usize));
 
@@ -25,6 +26,8 @@ pub async fn run_producer(
         None
     };
 
+    let body_arc = body.map(Arc::new);
+
     for _ in 0..count {
         if let Some(ref mut t) = ticker {
             t.tick().await;
@@ -33,12 +36,21 @@ pub async fn run_producer(
         let client_clone = Arc::clone(&client);
         let url_clone = Arc::clone(&url);
         let tx_clone = tx.clone();
+        let body_clone = body_arc.as_ref().map(Arc::clone);
 
         tokio::spawn(async move {
             let _permit = permit;
             let start_request = Instant::now();
 
-            let response = client_clone.get(url_clone.as_str()).send().await;
+            let request_builder = if let Some(b) = body_clone{
+                client_clone.post(url_clone.as_str())
+                    .header("Content-Type", "application/json")
+                    .body(b.to_string())   
+            } else {
+                client_clone.get(url_clone.as_str())
+            };
+
+            let response = request_builder.send().await;
             let success = response.is_ok() && response.unwrap().status().is_success();
 
             let _ = tx_clone
