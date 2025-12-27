@@ -1,10 +1,13 @@
 use crate::report::ShotResult;
+use crate::payload;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::{
     sync::{mpsc, Semaphore},
     time::{interval, Duration},
 };
+
+
 
 pub async fn run_producer(
     count: u32,
@@ -43,9 +46,12 @@ pub async fn run_producer(
             let start_request = Instant::now();
 
             let request_builder = if let Some(b) = body_clone{
+               
+               let dynamic_body = payload::process_payload(&b);
+               
                 client_clone.post(url_clone.as_str())
                     .header("Content-Type", "application/json")
-                    .body(b.to_string())   
+                    .body(dynamic_body)   
             } else {
                 client_clone.get(url_clone.as_str())
             };

@@ -1,6 +1,7 @@
 mod args;
 mod engine;
 mod report;
+mod payload;
 
 use crate::args::Args;
 use crate::report::LatencyMetrics;
