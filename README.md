@@ -28,6 +28,12 @@ Download the latest binary for your architecture from the **Releases** page.
 
 To install globally on Linux:
 
+\# install directly via cURL
+
+```bash
+curl -sSL https://raw.githubusercontent.com/FelipeFelipeRenan/cannon/main/install.sh | sh
+```
+
 \# Example for Linux
 
 ```bash
