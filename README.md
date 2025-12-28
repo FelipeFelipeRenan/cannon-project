@@ -31,7 +31,7 @@ To install globally on Linux:
 \# install directly via cURL
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/FelipeFelipeRenan/cannon/main/install.sh | sh
+curl -sSL https://raw.githubusercontent.com/FelipeFelipeRenan/cannon-project/main/install.sh | sh
 ```
 
 \# Example for Linux
