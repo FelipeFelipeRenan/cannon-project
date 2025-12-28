@@ -21,4 +21,7 @@ pub struct Args {
     #[arg(short, long)]
     pub body: Option<String>,
 
+    #[arg(short = 'X', long, default_value = "GET")]
+    pub method: String,
+
 }

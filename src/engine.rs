@@ -1,13 +1,12 @@
-use crate::report::ShotResult;
 use crate::payload;
+use crate::{report::ShotResult};
+use reqwest::Method;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::{
     sync::{mpsc, Semaphore},
     time::{interval, Duration},
 };
-
-
 
 pub async fn run_producer(
     count: u32,
@@ -17,8 +16,12 @@ pub async fn run_producer(
     tx: mpsc::Sender<ShotResult>,
     rps: Option<u32>,
     body: Option<String>,
+    method_str: String,
 ) {
     let semaphore = Arc::new(Semaphore::new(workers as usize));
+
+    let method = Method::from_bytes(method_str.to_uppercase().as_bytes())
+        .unwrap_or(Method::GET);
 
     let mut ticker = if let Some(r) = rps {
         let mut int = interval(Duration::from_secs_f64(1.0 / r as f64));
@@ -40,21 +43,19 @@ pub async fn run_producer(
         let url_clone = Arc::clone(&url);
         let tx_clone = tx.clone();
         let body_clone = body_arc.as_ref().map(Arc::clone);
-
+        let method_clone= method.clone();
         tokio::spawn(async move {
             let _permit = permit;
             let start_request = Instant::now();
 
-            let request_builder = if let Some(b) = body_clone{
-               
-               let dynamic_body = payload::process_payload(&b);
-               
-                client_clone.post(url_clone.as_str())
+            let mut request_builder = client_clone.request(method_clone, url_clone.as_str());
+
+            if let Some(b) = body_clone {
+                let dynamic_body = payload::process_payload(&b);
+                request_builder = request_builder
                     .header("Content-Type", "application/json")
-                    .body(dynamic_body)   
-            } else {
-                client_clone.get(url_clone.as_str())
-            };
+                    .body(dynamic_body);
+            } 
 
             let response = request_builder.send().await;
             let success = response.is_ok() && response.unwrap().status().is_success();

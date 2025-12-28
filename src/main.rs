@@ -46,6 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tx,
         args.rps,
         args.body.clone(),
+        args.method.clone(),
     ));
 
     // Configura UI e Métricas
