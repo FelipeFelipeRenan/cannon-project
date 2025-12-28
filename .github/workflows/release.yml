@@ -3,7 +3,7 @@ name: Release Cannon
 on:
   push:
     tags:
-      - 'v*' # Dispara quando envias uma tag como v1.0.0
+      - 'v*'
 
 permissions:
   contents: write
@@ -13,13 +13,14 @@ jobs:
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false # Não cancela os outros se um falhar
       matrix:
         include:
           - os: ubuntu-latest
             artifact_name: cannon
             asset_name: cannon-linux-x64
           - os: windows-latest
-            artifact_name: cannon-project.exe
+            artifact_name: cannon.exe # Se mudou no Cargo.toml, aqui tem que ser cannon.exe
             asset_name: cannon-windows-x64.exe
           - os: macos-latest
             artifact_name: cannon
@@ -35,6 +36,9 @@ jobs:
       - name: Build release
         run: cargo build --release
 
+      - name: Debug - List target files # Isso ajuda a ver o nome real do arquivo se falhar
+        run: ls -R target/release
+
       - name: Prepare binary (Unix)
         if: matrix.os != 'windows-latest'
         run: |
@@ -45,7 +49,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           cd target/release
-          rename ${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+          mv ${{ matrix.artifact_name }} ${{ matrix.asset_name }}
 
       - name: Upload binaries to Release
         uses: softprops/action-gh-release@v2
