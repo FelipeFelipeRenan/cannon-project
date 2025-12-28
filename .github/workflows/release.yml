@@ -1,0 +1,56 @@
+name: Release Cannon
+
+on:
+  push:
+    tags:
+      - 'v*' # Dispara quando envias uma tag como v1.0.0
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: cannon
+            asset_name: cannon-linux-x64
+          - os: windows-latest
+            artifact_name: cannon-project.exe
+            asset_name: cannon-windows-x64.exe
+          - os: macos-latest
+            artifact_name: cannon
+            asset_name: cannon-macos-x64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Prepare binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd target/release
+          mv ${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+
+      - name: Prepare binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cd target/release
+          rename ${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+
+      - name: Upload binaries to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/release/${{ matrix.asset_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
