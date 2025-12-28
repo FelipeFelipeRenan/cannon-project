@@ -26,15 +26,15 @@
 
 Download the latest binary for your architecture from the **Releases** page.
 
-To install globally on Linux:
+## To install globally on Linux:
 
-\# install directly via cURL
+### install directly via cURL
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/FelipeFelipeRenan/cannon-project/main/install.sh | sh
 ```
 
-\# Example for Linux
+### Example for Linux
 
 ```bash
 chmod +x cannon-linux-x64  
@@ -72,7 +72,9 @@ When using the \--body flag, you can inject dynamic data into your JSON to ensur
 
 Fire 5,000 requests with 20 concurrent workers:
 
-cannon \-u http://localhost:8081/api/v1/accounts \-c 5000 \-w 20
+```bash
+cannon -u http://localhost:8081/api/v1/accounts -c 5000 -w 20
+```
 
 ### **2\. Stable Load Simulation (RPS \+ Dynamic POST)**
 
