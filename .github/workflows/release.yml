@@ -13,17 +13,14 @@ jobs:
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false # Não cancela os outros se um falhar
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
-            artifact_name: cannon
             asset_name: cannon-linux-x64
           - os: windows-latest
-            artifact_name: cannon.exe # Se mudou no Cargo.toml, aqui tem que ser cannon.exe
             asset_name: cannon-windows-x64.exe
           - os: macos-latest
-            artifact_name: cannon
             asset_name: cannon-macos-x64
 
     steps:
@@ -36,20 +33,35 @@ jobs:
       - name: Build release
         run: cargo build --release
 
-      - name: Debug - List target files # Isso ajuda a ver o nome real do arquivo se falhar
-        run: ls -R target/release
-
-      - name: Prepare binary (Unix)
+      - name: Prepare Binary (Unix)
         if: matrix.os != 'windows-latest'
         run: |
           cd target/release
-          mv ${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+          # Procura por 'cannon' ou 'cannon-project'
+          if [ -f "cannon" ]; then
+            mv "cannon" "${{ matrix.asset_name }}"
+          elif [ -f "cannon-project" ]; then
+            mv "cannon-project" "${{ matrix.asset_name }}"
+          else
+            echo "❌ Error: No binary found in target/release"
+            ls -F
+            exit 1
+          fi
 
-      - name: Prepare binary (Windows)
+      - name: Prepare Binary (Windows)
         if: matrix.os == 'windows-latest'
+        shell: bash
         run: |
           cd target/release
-          mv ${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+          if [ -f "cannon.exe" ]; then
+            mv "cannon.exe" "${{ matrix.asset_name }}"
+          elif [ -f "cannon-project.exe" ]; then
+            mv "cannon-project.exe" "${{ matrix.asset_name }}"
+          else
+            echo "❌ Error: No .exe found in target/release"
+            ls -F
+            exit 1
+          fi
 
       - name: Upload binaries to Release
         uses: softprops/action-gh-release@v2
