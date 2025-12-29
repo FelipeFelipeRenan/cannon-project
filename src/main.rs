@@ -72,23 +72,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .progress_chars("━╾─"), // Gradiente de blocos Unicode
 );
 
-    // Consumidor: Coleta resultados enquanto eles chegam
-    while let Some(result) = rx.recv().await {
-        pb.inc(1);
-        let elapsed = start_test.elapsed().as_secs_f64();
-        if elapsed > 0.1 {
-            let rps = (success_count + failure_count) as f64 / elapsed;
-            pb.set_message(format!("| ⚡ {:.1} RPS", rps));
-        }
+    println!(
+        "{}",
+        "Pressione Ctrl+C para interromper e ver o relatório parcial".bright_black()
+    );
+    println!(
+        "{}",
+        "Pressione Ctrl+C para interromper e ver o relatório parcial".bright_black()
+    );
 
-        if let Some(code) = result.status_code {
-            *status_counts.entry(code).or_insert(0) += 1;
-        }
-        if result.success {
-            success_count += 1;
-            let _ = hist.record(result.duration.as_micros() as u64);
-        } else {
-            failure_count += 1;
+    loop {
+        tokio::select! {
+            result = rx.recv() => {
+                match result {
+                    Some(res) => {
+                        pb.inc(1);
+                        let elapsed = start_test.elapsed().as_secs_f64();
+                        if elapsed > 0.1 {
+                            let total_reqs = success_count + failure_count;
+                            let rps = total_reqs as f64 / elapsed;
+                            pb.set_message(format!("| ⚡ {:.1} RPS", rps));
+                        }
+
+                        if let Some(code) = res.status_code {
+                            *status_counts.entry(code).or_insert(0) += 1;
+                        }
+
+                        if res.success {
+                            success_count += 1;
+                            let _ = hist.record(res.duration.as_micros() as u64);
+                        } else {
+                            failure_count += 1;
+                        }
+                    },
+                    None => break, 
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                println!("\n\n{}", "⚠️ Interrupção detectada! Preparando relatório parcial...".yellow().bold());
+                break; 
+            }
         }
     }
 
