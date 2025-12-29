@@ -1,5 +1,5 @@
 use crate::payload;
-use crate::{report::ShotResult};
+use crate::report::ShotResult;
 use reqwest::Method;
 use std::sync::Arc;
 use std::time::Instant;
@@ -21,8 +21,7 @@ pub async fn run_producer(
 ) {
     let semaphore = Arc::new(Semaphore::new(workers as usize));
 
-    let method = Method::from_bytes(method_str.to_uppercase().as_bytes())
-        .unwrap_or(Method::GET);
+    let method = Method::from_bytes(method_str.to_uppercase().as_bytes()).unwrap_or(Method::GET);
 
     let mut ticker = if let Some(r) = rps {
         let mut int = interval(Duration::from_secs_f64(1.0 / r as f64));
@@ -44,7 +43,7 @@ pub async fn run_producer(
         let url_clone = Arc::clone(&url);
         let tx_clone = tx.clone();
         let body_clone = body_arc.as_ref().map(Arc::clone);
-        let method_clone= method.clone();
+        let method_clone = method.clone();
         let headers_clone = Arc::clone(&headers);
 
         tokio::spawn(async move {
@@ -53,25 +52,41 @@ pub async fn run_producer(
 
             let mut request_builder = client_clone.request(method_clone, url_clone.as_str());
 
-            for h in headers_clone.iter(){
+            for h in headers_clone.iter() {
                 let parts: Vec<&str> = h.splitn(2, ':').collect();
-                if parts.len() == 2{
+                if parts.len() == 2 {
                     request_builder = request_builder.header(parts[0].trim(), parts[1].trim())
                 }
             }
+            let mut has_content_type = false;
+            for h in headers_clone.iter() {
+                let parts: Vec<&str> = h.splitn(2, ':').collect();
+                if parts.len() == 2 {
+                    let key = parts[0].trim();
+                    if key.to_lowercase() == "content-type" {
+                        has_content_type = true;
+                    }
+                    request_builder = request_builder.header(key, parts[1].trim());
+                }
+            }
+
+            // 2. Aplicar o corpo e o Content-Type padrão apenas se necessário
             if let Some(b) = body_clone {
                 let dynamic_body = payload::process_payload(&b);
-                request_builder = request_builder
-                    .header("Content-Type", "application/json")
-                    .body(dynamic_body);
-            } 
 
+                // Só adiciona o header de JSON se o utilizador não tiver passado um específico
+                if !has_content_type {
+                    request_builder = request_builder.header("Content-Type", "application/json");
+                }
+
+                request_builder = request_builder.body(dynamic_body);
+            }
             let response = request_builder.send().await;
-            let (success, status_code) = match response{
+            let (success, status_code) = match response {
                 Ok(res) => {
                     let s = res.status();
                     (s.is_success(), Some(s.as_u16()))
-                },
+                }
                 Err(_) => (false, None),
             };
 
