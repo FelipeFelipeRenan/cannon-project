@@ -1,7 +1,7 @@
 mod args;
 mod engine;
-mod report;
 mod payload;
+mod report;
 
 use crate::args::Args;
 use crate::report::LatencyMetrics;
@@ -17,7 +17,11 @@ use tokio::sync::mpsc;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let client = Arc::new(reqwest::Client::new());
+    let client = Arc::new(
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(args.timeout))
+            .build()?,
+    );
     let url = Arc::new(args.url.clone());
     let headers = Arc::new(args.headers.clone());
 
@@ -36,6 +40,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .bold()
     );
 
+    println!("⏱️ Timeout: {}ms", args.timeout.to_string().yellow());
+
     let start_test = Instant::now();
 
     // Inicia o motor em background
@@ -48,13 +54,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.rps,
         args.body.clone(),
         args.method.clone(),
-        headers
+        headers,
     ));
 
     // Configura UI e Métricas
     let mut success_count = 0;
     let mut failure_count = 0;
     let mut hist = Histogram::<u64>::new_with_bounds(1, 60_000_000, 3)?;
+
+    let mut status_counts = std::collections::HashMap::<u16, u64>::new();
 
     let pb = ProgressBar::new(args.count as u64);
     pb.set_style(
@@ -71,6 +79,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if elapsed > 0.1 {
             let rps = (success_count + failure_count) as f64 / elapsed;
             pb.set_message(format!("| ⚡ {:.1} RPS", rps));
+        }
+
+        if let Some(code) = result.status_code {
+            *status_counts.entry(code).or_insert(0) += 1;
         }
         if result.success {
             success_count += 1;
@@ -89,6 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &hist,
         start_test.elapsed(),
         args.rps,
+        status_counts,
     );
 
     // Exportação JSON
@@ -105,6 +118,7 @@ fn print_summary(
     hist: &Histogram<u64>,
     total: std::time::Duration,
     target_rps: Option<u32>,
+    status_counts: std::collections::HashMap<u16, u64>,
 ) {
     println!("\n{}", "--- 🏁 RELATÓRIO DO CANNON ---".bold().underline());
     println!("Sucessos:     {}", successes);
@@ -160,17 +174,36 @@ fn print_summary(
     let total_secs = total.as_secs_f64();
     let actual_rps = successes as f64 / total_secs;
 
+    println!("\n{}", "-------------------------".bright_black());
+
+    println!(
+        "\n{}",
+        "📊 DISTRIBUIÇÃO DE STATUS CODES".bold().bright_white()
+    );
+
+    let mut codes: Vec<_> = status_counts.into_iter().collect();
+
+    codes.sort_by_key(|a| a.0);
+
+    for (code, count) in codes {
+        let color_code = match code {
+            200..=299 => code.to_string().green(),
+            400..=499 => code.to_string().yellow(),
+            _ => code.to_string().red(),
+        };
+
+        println!("  HTTP {}: {}", color_code, count);
+    }
+
+    println!("\n{}", "-------------------------".bright_black());
+
     println!("\n{}", "📈 EFICIÊNCIA DO CANHÃO".bold().bright_white());
 
     if let Some(target) = target_rps {
         let efficiency = (actual_rps / target as f64) * 100.0;
         let rps_str = format!("{:.2}", actual_rps).yellow();
         println!("RPS Alvo:      {}", target.to_string().cyan());
-        println!(
-            "RPS Real:      {:.2} ({:.1}%)",
-            rps_str,
-            efficiency
-        );
+        println!("RPS Real:      {:.2} ({:.1}%)", rps_str, efficiency);
     } else {
         println!(
             "RPS Médio:     {:.2} req/s",
@@ -178,7 +211,7 @@ fn print_summary(
         );
     }
 
-    println!("-------------------------");
+    println!("\n{}", "-------------------------".bright_black());
     println!("Teste finalizado em {}s", total.as_secs());
 }
 

@@ -67,12 +67,19 @@ pub async fn run_producer(
             } 
 
             let response = request_builder.send().await;
-            let success = response.is_ok() && response.unwrap().status().is_success();
+            let (success, status_code) = match response{
+                Ok(res) => {
+                    let s = res.status();
+                    (s.is_success(), Some(s.as_u16()))
+                },
+                Err(_) => (false, None),
+            };
 
             let _ = tx_clone
                 .send(ShotResult {
                     success,
                     duration: start_request.elapsed(),
+                    status_code,
                 })
                 .await;
         });

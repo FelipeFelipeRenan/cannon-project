@@ -27,4 +27,7 @@ pub struct Args {
     #[arg(short = 'H', long = "header")]
     pub headers: Vec<String>,
 
+    #[arg(short, long, default_value_t = 30000)]
+    pub timeout: u64,
+
 }

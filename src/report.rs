@@ -6,6 +6,7 @@ use colored::Colorize;
 pub struct ShotResult {
     pub success: bool,
     pub duration: std::time::Duration,
+    pub status_code: Option<u16>,
 }
 
 #[derive(Serialize, Tabled)]
