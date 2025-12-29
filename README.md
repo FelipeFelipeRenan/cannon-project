@@ -54,6 +54,8 @@ Use these flags to configure your load test.
 | \-X | \--method | HTTP method to use: GET, POST, PUT, PATCH, DELETE. | GET |
 | \-b | \--body | JSON payload for the request. Often used with POST/PATCH. | None |
 | \-o | \--output | Path to save the detailed execution report in .json format. | None |
+| \-t | \--timeout | Timeout to cancel a long request. | None |
+| \-H | \--header | Custom header (e.g., {"Authorization: Bearer token"}). | None |
 
 ## **🧬 Dynamic Payload Tags**
 
