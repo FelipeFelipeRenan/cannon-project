@@ -19,6 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let client = Arc::new(reqwest::Client::new());
     let url = Arc::new(args.url.clone());
+    let headers = Arc::new(args.headers.clone());
 
     let (tx, mut rx) = mpsc::channel(args.count as usize);
 
@@ -47,6 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.rps,
         args.body.clone(),
         args.method.clone(),
+        headers
     ));
 
     // Configura UI e Métricas

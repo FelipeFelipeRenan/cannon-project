@@ -17,6 +17,7 @@ pub async fn run_producer(
     rps: Option<u32>,
     body: Option<String>,
     method_str: String,
+    headers: Arc<Vec<String>>,
 ) {
     let semaphore = Arc::new(Semaphore::new(workers as usize));
 
@@ -44,12 +45,20 @@ pub async fn run_producer(
         let tx_clone = tx.clone();
         let body_clone = body_arc.as_ref().map(Arc::clone);
         let method_clone= method.clone();
+        let headers_clone = Arc::clone(&headers);
+
         tokio::spawn(async move {
             let _permit = permit;
             let start_request = Instant::now();
 
             let mut request_builder = client_clone.request(method_clone, url_clone.as_str());
 
+            for h in headers_clone.iter(){
+                let parts: Vec<&str> = h.splitn(2, ':').collect();
+                if parts.len() == 2{
+                    request_builder = request_builder.header(parts[0].trim(), parts[1].trim())
+                }
+            }
             if let Some(b) = body_clone {
                 let dynamic_body = payload::process_payload(&b);
                 request_builder = request_builder

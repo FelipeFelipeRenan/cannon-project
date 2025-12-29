@@ -24,4 +24,7 @@ pub struct Args {
     #[arg(short = 'X', long, default_value = "GET")]
     pub method: String,
 
+    #[arg(short = 'H', long = "header")]
+    pub headers: Vec<String>,
+
 }
