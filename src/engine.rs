@@ -82,12 +82,24 @@ pub async fn run_producer(
                 request_builder = request_builder.body(dynamic_body);
             }
             let response = request_builder.send().await;
-            let (success, status_code) = match response {
+            let (success, status_code, error) = match response {
                 Ok(res) => {
                     let s = res.status();
-                    (s.is_success(), Some(s.as_u16()))
+                    (s.is_success(), Some(s.as_u16()), None)
                 }
-                Err(_) => (false, None),
+                Err(e) => {
+                    // Mapeia o erro para uma string simples
+                    let msg = if e.is_timeout() {
+                        "Timeout".to_string()
+                    } else if e.is_connect() {
+                        "Connection Error".to_string()
+                    } else if e.is_decode() {
+                        "Decode Error".to_string()
+                    } else {
+                        "Network/Unknown Error".to_string()
+                    };
+                    (false, None, Some(msg))
+                }
             };
 
             let _ = tx_clone
@@ -95,6 +107,7 @@ pub async fn run_producer(
                     success,
                     duration: start_request.elapsed(),
                     status_code,
+                    error,
                 })
                 .await;
         });

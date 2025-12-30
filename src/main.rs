@@ -63,6 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut hist = Histogram::<u64>::new_with_bounds(1, 60_000_000, 3)?;
 
     let mut status_counts = std::collections::HashMap::<u16, u64>::new();
+    let mut error_counts = std::collections::HashMap::<String, u64>::new();
 
     let pb = ProgressBar::new(args.count as u64);
     pb.set_style(
@@ -72,10 +73,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .progress_chars("━╾─"), // Gradiente de blocos Unicode
 );
 
-    println!(
-        "{}",
-        "Pressione Ctrl+C para interromper e ver o relatório parcial".bright_black()
-    );
     println!(
         "{}",
         "Pressione Ctrl+C para interromper e ver o relatório parcial".bright_black()
@@ -94,6 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             pb.set_message(format!("| ⚡ {:.1} RPS", rps));
                         }
 
+
                         if let Some(code) = res.status_code {
                             *status_counts.entry(code).or_insert(0) += 1;
                         }
@@ -104,13 +102,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             failure_count += 1;
                         }
+                        if let Some(err_msg) = res.error{
+                            *error_counts.entry(err_msg).or_insert(0) += 1;
+                        }
                     },
-                    None => break, 
+                    None => break,
                 }
             }
             _ = tokio::signal::ctrl_c() => {
                 println!("\n\n{}", "⚠️ Interrupção detectada! Preparando relatório parcial...".yellow().bold());
-                break; 
+                break;
             }
         }
     }
@@ -125,6 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         start_test.elapsed(),
         args.rps,
         status_counts,
+        error_counts,
     );
 
     // Exportação JSON
@@ -142,6 +144,7 @@ fn print_summary(
     total: std::time::Duration,
     target_rps: Option<u32>,
     status_counts: std::collections::HashMap<u16, u64>,
+    error_counts: std::collections::HashMap<String, u64>,
 ) {
     println!("\n{}", "--- 🏁 RELATÓRIO DO CANNON ---".bold().underline());
     println!("Sucessos:     {}", successes);
@@ -216,6 +219,13 @@ fn print_summary(
         };
 
         println!("  HTTP {}: {}", color_code, count);
+    }
+
+    if !error_counts.is_empty() {
+        println!("\n{}", "❌ DETALHAMENTO DE FALHAS".bold().red());
+        for (err, count) in error_counts {
+            println!("  {}: {}", err.yellow(), count);
+        }
     }
 
     println!("\n{}", "-------------------------".bright_black());
