@@ -19,6 +19,7 @@ pub async fn run_producer(
     method_str: String,
     headers: Arc<Vec<String>>,
     expect: Option<String>,
+    ramp_up_secs: u64,
 ) {
     let semaphore = Arc::new(Semaphore::new(workers as usize));
 
@@ -33,9 +34,10 @@ pub async fn run_producer(
         None
     };
 
+    let start_engine = Instant::now();
+    let target_rps = rps.unwrap_or(0) as f64;
     let body_arc = body.map(Arc::new);
     let expect_arc = expect.map(Arc::new);
-
 
     for _ in 0..count {
         if let Some(ref mut t) = ticker {
@@ -50,7 +52,20 @@ pub async fn run_producer(
         let headers_clone = Arc::clone(&headers);
         let expect_clone = expect_arc.as_ref().map(Arc::clone);
 
-       tokio::spawn(async move {
+        tokio::spawn(async move {
+            if target_rps > 0.0 {
+                let elapsed = start_engine.elapsed().as_secs_f64();
+                let current_rps = if ramp_up_secs > 0 && elapsed < ramp_up_secs as f64 {
+                    let progress = elapsed / ramp_up_secs as f64;
+                    // Sobe de 1.0 até o target_rps linearmente
+                    1.0 + (target_rps - 1.0) * progress
+                } else {
+                    target_rps
+                };
+
+                let delay = Duration::from_secs_f64(1.0 / current_rps);
+                tokio::time::sleep(delay).await;
+            }
             let _permit = permit;
             let start_request = Instant::now();
 
@@ -80,7 +95,7 @@ pub async fn run_producer(
 
             // 3. Executar e Validar
             let response = request_builder.send().await;
-            
+
             let (success, status_code, error, assertion_success) = match response {
                 Ok(res) => {
                     let s = res.status();

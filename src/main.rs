@@ -44,6 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let start_test = Instant::now();
 
+    let ramp_up_secs = args.ramp_up.as_ref().map(|s| parse_duration(s)).unwrap_or(0);
     // Inicia o motor em background
     tokio::spawn(engine::run_producer(
         args.count,
@@ -56,6 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.method.clone(),
         headers,
         args.expect.clone(),
+        ramp_up_secs,
     ));
 
     // Configura UI e Métricas
@@ -288,6 +290,18 @@ fn save_report(
     std::fs::write(path, json)?;
     println!("📂 Relatório salvo com sucesso!");
     Ok(())
+}
+
+fn parse_duration(s: &str) -> u64 {
+    let s = s.to_lowercase();
+
+    if s.ends_with('s') {
+        s.trim_end_matches('s').parse().unwrap_or(0)
+    } else if s.ends_with('m') {
+        s.trim_end_matches('m').parse::<u64>().unwrap_or(0) * 60
+    } else {
+        s.parse().unwrap_or(0)
+    }
 }
 
 fn print_banner() {

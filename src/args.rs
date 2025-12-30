@@ -32,5 +32,8 @@ pub struct Args {
 
     #[arg(long)]
     pub expect: Option<String>,
+
+    #[arg(long)]
+    pub ramp_up: Option<String>,
 }
 

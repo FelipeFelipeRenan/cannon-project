@@ -56,6 +56,8 @@ Use these flags to configure your load test.
 | \-o | \--output | Path to save the detailed execution report in .json format. | None |
 | \-t | \--timeout | Timeout to cancel a long request. | None |
 | \-H | \--header | Custom header (e.g., {"Authorization: Bearer token"}). | None |
+| - | \--ramp_up | Time to warm up requests. | None |
+| - | \--expect | Assert response with a given string. | None |
 
 ## **🧬 Dynamic Payload Tags**
 
@@ -72,7 +74,7 @@ When using the \--body flag, you can inject dynamic data into your JSON to ensur
 
 ### **1\. Simple Stress Test (GET)**
 
-Fire 5,000 requests with 20 concurrent workers:
+Fire 5000 requests with 20 concurrent workers:
 
 ```bash
 cannon -u http://localhost:8081/api/v1/accounts -c 5000 -w 20
@@ -80,7 +82,7 @@ cannon -u http://localhost:8081/api/v1/accounts -c 5000 -w 20
 
 ### **2\. Stable Load Simulation (RPS \+ Dynamic POST)**
 
-Create 1,000 unique accounts at a steady rate of 100 requests per second:
+Create 1000 unique accounts at a steady rate of 100 requests per second:
 
 ```bash
 cannon -u http://localhost:8081/api/v1/accounts \  
@@ -89,6 +91,27 @@ cannon -u http://localhost:8081/api/v1/accounts \
     -X POST \  
     --rps 100 \  
     --body '{"clientId": "user\_{{user}}\_test", "currency": "BRL"}'
+```
+
+### **3\. Stress test with Ramp-up**
+
+Fire 5000 requests, increasing gradually up to 100 RPS for about 15 seconds
+
+```bash
+cannon -u 'http://localhost:8081/api/v1/accounts' \
+  -c 5000 \
+  -w 20 \
+  --rps 100 \
+  --ramp-up 15s \
+  -H 'Authorization: Bearer seu_token'
+```
+
+### **4\. Assertion Test**
+
+```bash
+cannon -u 'http://api.example.com/v1/user' \
+  --expect 'admin_privileges' \
+  -c 1000 -w 10
 ```
 
 ## **🔍 Understanding the Report**

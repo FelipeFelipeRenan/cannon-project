@@ -1,13 +1,13 @@
 {
-  "target": "http://localhost:8081/api/v1/accounts",
-  "total_requests": 1000,
-  "concurrency": 50,
-  "successes": 1000,
-  "failures": 0,
-  "min_ms": 7.612,
-  "avg_ms": 133.428,
-  "p50_ms": 118.975,
-  "p95_ms": 275.199,
-  "p99_ms": 413.951,
-  "max_ms": 623.615
+  "target": "http://localhost/users",
+  "total_requests": 50000,
+  "concurrency": 20,
+  "successes": 0,
+  "failures": 50000,
+  "min_ms": 0.0,
+  "avg_ms": 0.0,
+  "p50_ms": 0.0,
+  "p95_ms": 0.0,
+  "p99_ms": 0.0,
+  "max_ms": 0.0
 }
