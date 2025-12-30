@@ -30,4 +30,7 @@ pub struct Args {
     #[arg(short, long, default_value_t = 30000)]
     pub timeout: u64,
 
+    #[arg(long)]
+    pub expect: Option<String>,
 }
+

@@ -55,6 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.body.clone(),
         args.method.clone(),
         headers,
+        args.expect.clone(),
     ));
 
     // Configura UI e Métricas
@@ -64,6 +65,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut status_counts = std::collections::HashMap::<u16, u64>::new();
     let mut error_counts = std::collections::HashMap::<String, u64>::new();
+
+    let mut assertion_failures = 0;
 
     let pb = ProgressBar::new(args.count as u64);
     pb.set_style(
@@ -105,6 +108,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if let Some(err_msg) = res.error{
                             *error_counts.entry(err_msg).or_insert(0) += 1;
                         }
+                        if !res.assertion_success {
+                            assertion_failures += 1;
+                        }
                     },
                     None => break,
                 }
@@ -127,6 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.rps,
         status_counts,
         error_counts,
+        assertion_failures,
     );
 
     // Exportação JSON
@@ -145,6 +152,7 @@ fn print_summary(
     target_rps: Option<u32>,
     status_counts: std::collections::HashMap<u16, u64>,
     error_counts: std::collections::HashMap<String, u64>,
+    assertion_failures: u64,
 ) {
     println!("\n{}", "--- 🏁 RELATÓRIO DO CANNON ---".bold().underline());
     println!("Sucessos:     {}", successes);
@@ -226,6 +234,13 @@ fn print_summary(
         for (err, count) in error_counts {
             println!("  {}: {}", err.yellow(), count);
         }
+    }
+
+    if assertion_failures > 0 {
+        println!(
+            "❌ Falhas de Asserção: {}",
+            assertion_failures.to_string().red()
+        );
     }
 
     println!("\n{}", "-------------------------".bright_black());

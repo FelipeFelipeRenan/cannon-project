@@ -18,6 +18,7 @@ pub async fn run_producer(
     body: Option<String>,
     method_str: String,
     headers: Arc<Vec<String>>,
+    expect: Option<String>,
 ) {
     let semaphore = Arc::new(Semaphore::new(workers as usize));
 
@@ -33,6 +34,8 @@ pub async fn run_producer(
     };
 
     let body_arc = body.map(Arc::new);
+    let expect_arc = expect.map(Arc::new);
+
 
     for _ in 0..count {
         if let Some(ref mut t) = ticker {
@@ -45,19 +48,15 @@ pub async fn run_producer(
         let body_clone = body_arc.as_ref().map(Arc::clone);
         let method_clone = method.clone();
         let headers_clone = Arc::clone(&headers);
+        let expect_clone = expect_arc.as_ref().map(Arc::clone);
 
-        tokio::spawn(async move {
+       tokio::spawn(async move {
             let _permit = permit;
             let start_request = Instant::now();
 
             let mut request_builder = client_clone.request(method_clone, url_clone.as_str());
 
-            for h in headers_clone.iter() {
-                let parts: Vec<&str> = h.splitn(2, ':').collect();
-                if parts.len() == 2 {
-                    request_builder = request_builder.header(parts[0].trim(), parts[1].trim())
-                }
-            }
+            // 1. Aplicar headers e detectar Content-Type manual
             let mut has_content_type = false;
             for h in headers_clone.iter() {
                 let parts: Vec<&str> = h.splitn(2, ':').collect();
@@ -70,35 +69,57 @@ pub async fn run_producer(
                 }
             }
 
-            // 2. Aplicar o corpo e o Content-Type padrão apenas se necessário
+            // 2. Aplicar corpo dinâmico
             if let Some(b) = body_clone {
                 let dynamic_body = payload::process_payload(&b);
-
-                // Só adiciona o header de JSON se o utilizador não tiver passado um específico
                 if !has_content_type {
                     request_builder = request_builder.header("Content-Type", "application/json");
                 }
-
                 request_builder = request_builder.body(dynamic_body);
             }
+
+            // 3. Executar e Validar
             let response = request_builder.send().await;
-            let (success, status_code, error) = match response {
+            
+            let (success, status_code, error, assertion_success) = match response {
                 Ok(res) => {
                     let s = res.status();
-                    (s.is_success(), Some(s.as_u16()), None)
+                    let code = s.as_u16();
+                    let mut is_success = s.is_success();
+                    let mut err_msg = None;
+                    let mut assert_ok = true;
+
+                    // Se a requisição foi 2xx e o usuário quer validar o conteúdo
+                    if is_success {
+                        if let Some(expected) = expect_clone {
+                            // Consome o corpo da resposta como texto
+                            match res.text().await {
+                                Ok(text) => {
+                                    if !text.contains(expected.as_str()) {
+                                        is_success = false;
+                                        assert_ok = false;
+                                        err_msg = Some("Assertion Failed".to_string());
+                                    }
+                                }
+                                Err(_) => {
+                                    is_success = false;
+                                    assert_ok = false;
+                                    err_msg = Some("Body Read Error".to_string());
+                                }
+                            }
+                        }
+                    }
+                    (is_success, Some(code), err_msg, assert_ok)
                 }
                 Err(e) => {
-                    // Mapeia o erro para uma string simples
                     let msg = if e.is_timeout() {
                         "Timeout".to_string()
                     } else if e.is_connect() {
                         "Connection Error".to_string()
-                    } else if e.is_decode() {
-                        "Decode Error".to_string()
                     } else {
-                        "Network/Unknown Error".to_string()
+                        "Network Error".to_string()
                     };
-                    (false, None, Some(msg))
+                    (false, None, Some(msg), true)
                 }
             };
 
@@ -108,6 +129,7 @@ pub async fn run_producer(
                     duration: start_request.elapsed(),
                     status_code,
                     error,
+                    assertion_success,
                 })
                 .await;
         });

@@ -8,6 +8,7 @@ pub struct ShotResult {
     pub duration: std::time::Duration,
     pub status_code: Option<u16>,
     pub error: Option<String>,
+    pub assertion_success: bool,
 }
 
 #[derive(Serialize, Tabled)]
