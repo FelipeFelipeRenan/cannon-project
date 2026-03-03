@@ -19,6 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let client = Arc::new(
         reqwest::Client::builder()
+            .user_agent(&args.user_agent)
             .timeout(std::time::Duration::from_millis(args.timeout))
             .build()?,
     );
@@ -44,7 +45,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let start_test = Instant::now();
 
-    let ramp_up_secs = args.ramp_up.as_ref().map(|s| parse_duration(s)).unwrap_or(0);
+    let ramp_up_secs = args
+        .ramp_up
+        .as_ref()
+        .map(|s| parse_duration(s))
+        .unwrap_or(0);
     // Inicia o motor em background
     tokio::spawn(engine::run_producer(
         args.count,
@@ -321,4 +326,25 @@ fn print_banner() {
             .italic()
     );
     println!();
+}
+
+fn update() -> Result<(), Box<dyn std::error::Error>>{
+    let status = self_update::backends::github::Update::configure()
+        .repo_owner("FelipeFelipeRenan")
+        .repo_name("cannon-project")
+        .bin_name(cannon)
+        .show_download_progress(true)
+        .current_version(env!("CARGO_PKG_VERSION"))
+        .build()?
+        .update()?;
+
+    if status.updated(){
+        println!("Atualizado com sucesso para a versão {}", status.version());
+
+    } else {
+        println!("Você já está na versão mais recente: {}", status.version());
+
+    }
+
+    Ok(())
 }

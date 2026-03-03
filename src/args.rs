@@ -35,5 +35,8 @@ pub struct Args {
 
     #[arg(long)]
     pub ramp_up: Option<String>,
+
+    #[arg(short = 'A', long, default_value = "Cannon/1.0")]
+    pub user_agent: String,
 }
 
