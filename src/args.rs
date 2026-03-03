@@ -38,5 +38,8 @@ pub struct Args {
 
     #[arg(short = 'A', long, default_value = "Cannon/1.0")]
     pub user_agent: String,
+
+    #[arg(long)]
+    pub update: bool,
 }
 

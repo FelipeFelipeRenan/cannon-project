@@ -17,6 +17,11 @@ use tokio::sync::mpsc;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+
+    if args.url ==  "" && args.update{
+        update()?;
+        return Ok(());
+    }
     let client = Arc::new(
         reqwest::Client::builder()
             .user_agent(&args.user_agent)
@@ -332,7 +337,7 @@ fn update() -> Result<(), Box<dyn std::error::Error>>{
     let status = self_update::backends::github::Update::configure()
         .repo_owner("FelipeFelipeRenan")
         .repo_name("cannon-project")
-        .bin_name(cannon)
+        .bin_name("cannon")
         .show_download_progress(true)
         .current_version(env!("CARGO_PKG_VERSION"))
         .build()?
