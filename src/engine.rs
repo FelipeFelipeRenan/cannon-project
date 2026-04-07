@@ -85,8 +85,13 @@ pub async fn run_producer(
             }
 
             // 2. Aplicar corpo dinâmico
+
+            let mut bytes_sent = 0;
+
             if let Some(b) = body_clone {
                 let dynamic_body = payload::process_payload(&b);
+                bytes_sent = dynamic_body.len() as u64;
+
                 if !has_content_type {
                     request_builder = request_builder.header("Content-Type", "application/json");
                 }
@@ -96,7 +101,7 @@ pub async fn run_producer(
             // 3. Executar e Validar
             let response = request_builder.send().await;
 
-            let (success, status_code, error, assertion_success) = match response {
+            let (success, status_code, error, assertion_success, bytes_received) = match response {
                 Ok(res) => {
                     let s = res.status();
                     let code = s.as_u16();
@@ -104,27 +109,28 @@ pub async fn run_producer(
                     let mut err_msg = None;
                     let mut assert_ok = true;
 
-                    // Se a requisição foi 2xx e o usuário quer validar o conteúdo
-                    if is_success {
-                        if let Some(expected) = expect_clone {
-                            // Consome o corpo da resposta como texto
-                            match res.text().await {
-                                Ok(text) => {
+                    let rx_bytes = match res.bytes().await {
+                        Ok(b) => {
+                            if is_success {
+                                if let Some(expected) = expect_clone {
+                                    // Converte de lossy utf8 apenas se precisarmos checar o expect
+                                    let text = String::from_utf8_lossy(&b);
                                     if !text.contains(expected.as_str()) {
                                         is_success = false;
                                         assert_ok = false;
                                         err_msg = Some("Assertion Failed".to_string());
                                     }
                                 }
-                                Err(_) => {
-                                    is_success = false;
-                                    assert_ok = false;
-                                    err_msg = Some("Body Read Error".to_string());
-                                }
                             }
+                            b.len() as u64 // Pega o tamanho real dos bytes baixados
                         }
-                    }
-                    (is_success, Some(code), err_msg, assert_ok)
+                        Err(_) => {
+                            is_success = false;
+                            err_msg = Some("Body Read Error".to_string());
+                            0
+                        }
+                    };
+                    (is_success, Some(code), err_msg, assert_ok, rx_bytes)
                 }
                 Err(e) => {
                     let msg = if e.is_timeout() {
@@ -134,9 +140,10 @@ pub async fn run_producer(
                     } else {
                         "Network Error".to_string()
                     };
-                    (false, None, Some(msg), true)
+                    (false, None, Some(msg), true, 0)
                 }
             };
+            // Se a requisição foi 2xx e o usuário quer validar o conteúdo
 
             let _ = tx_clone
                 .send(ShotResult {
@@ -145,6 +152,8 @@ pub async fn run_producer(
                     status_code,
                     error,
                     assertion_success,
+                    bytes_sent,
+                    bytes_received,
                 })
                 .await;
         });

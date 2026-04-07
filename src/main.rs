@@ -18,16 +18,20 @@ use tokio::sync::mpsc;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    if args.update{
+    if args.update {
         update()?;
         return Ok(());
     }
 
-    let url_str = match args.url.as_ref(){
+    let url_str = match args.url.as_ref() {
         Some(u) => u.clone(),
-        None =>{
-           eprintln!("{} {}", "error:".red().bold(), "O argumento '--url <URL>' é obrigatório para iniciar o teste.");
-            std::process::exit(1); 
+        None => {
+            eprintln!(
+                "{} {}",
+                "error:".red().bold(),
+                "O argumento '--url <URL>' é obrigatório para iniciar o teste."
+            );
+            std::process::exit(1);
         }
     };
 
@@ -89,6 +93,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut assertion_failures = 0;
 
+    let mut total_bytes_sent: u64 = 0;
+    let mut total_bytes_received: u64 = 0;
+
     let pb = ProgressBar::new(args.count as u64);
     pb.set_style(
     ProgressStyle::default_bar()
@@ -108,6 +115,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match result {
                     Some(res) => {
                         pb.inc(1);
+
+                        total_bytes_sent += res.bytes_sent;
+                        total_bytes_received += res.bytes_received;
                         let elapsed = start_test.elapsed().as_secs_f64();
                         if elapsed > 0.1 {
                             let total_reqs = success_count + failure_count;
@@ -155,6 +165,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         status_counts,
         error_counts,
         assertion_failures,
+        total_bytes_sent,
+        total_bytes_received,
     );
 
     // Exportação JSON
@@ -174,6 +186,8 @@ fn print_summary(
     status_counts: std::collections::HashMap<u16, u64>,
     error_counts: std::collections::HashMap<String, u64>,
     assertion_failures: u64,
+    bytes_sent: u64,
+    bytes_recv: u64,
 ) {
     println!("\n{}", "--- 🏁 RELATÓRIO DO CANNON ---".bold().underline());
     println!("Sucessos:     {}", successes);
@@ -266,17 +280,41 @@ fn print_summary(
 
     println!("\n{}", "-------------------------".bright_black());
 
+    println!("\n{}", "📈 EFICIÊNCIA E REDE".bold().bright_white());
+
+    // --- NOVA LÓGICA DE CÁLCULO DE MB/s ---
+    let sent_mb = bytes_sent as f64 / 1_048_576.0; // Divide por 1024^2
+    let recv_mb = bytes_recv as f64 / 1_048_576.0;
+
+    let throughput_sent = sent_mb / total_secs;
+    let throughput_recv = recv_mb / total_secs;
+
+    let sent_mb_str = format!("{:.2}", sent_mb).magenta();
+    let throughput_sent_str = format!("{:.2}", throughput_sent).yellow();
+    let recv_mb_str = format!("{:.2}", recv_mb).cyan();
+    let throughput_recv_str = format!("{:.2}", throughput_recv).yellow();
+
+    println!(
+        "📤 Transferência:   {} MB totais ({} MB/s)",
+        sent_mb_str, throughput_sent_str
+    );
+    println!(
+        "📥 Recebimento:     {} MB totais ({} MB/s)",
+        recv_mb_str, throughput_recv_str
+    );
+    println!("\n{}", "-------------------------".bright_black());
+
     println!("\n{}", "📈 EFICIÊNCIA DO CANHÃO".bold().bright_white());
 
     if let Some(target) = target_rps {
         let efficiency = (actual_rps / target as f64) * 100.0;
         let rps_str = format!("{:.2}", actual_rps).yellow();
         println!("RPS Alvo:      {}", target.to_string().cyan());
-        println!("RPS Real:      {:.2} ({:.1}%)", rps_str, efficiency);
+        println!("RPS Real:      {} ({:.1}%)", rps_str, efficiency);
     } else {
         println!(
-            "RPS Médio:     {:.2} req/s",
-            actual_rps.to_string().yellow()
+            "RPS Médio:     {} req/s",
+            format!("{:.2}", actual_rps).yellow()
         );
     }
 
@@ -356,18 +394,24 @@ fn update() -> Result<(), Box<dyn std::error::Error>> {
 
     let status = self_update::backends::github::Update::configure()
         .repo_owner("FelipeFelipeRenan") //
-        .repo_name("cannon-project")     //
-        .bin_name("cannon")              // Nome do binário local
-        .target(target)                  // Força a busca pelo asset que termina com este target
-        .show_download_progress(true)    //
+        .repo_name("cannon-project") //
+        .bin_name("cannon") // Nome do binário local
+        .target(target) // Força a busca pelo asset que termina com este target
+        .show_download_progress(true) //
         .current_version(env!("CARGO_PKG_VERSION")) //
         .build()?
         .update()?;
 
     if status.updated() {
-        println!("✅ Atualizado com sucesso para a versão {}", status.version()); //
+        println!(
+            "✅ Atualizado com sucesso para a versão {}",
+            status.version()
+        ); //
     } else {
-        println!("✨ Você já está na versão mais recente: {}", status.version()); //
+        println!(
+            "✨ Você já está na versão mais recente: {}",
+            status.version()
+        ); //
     }
 
     Ok(())
