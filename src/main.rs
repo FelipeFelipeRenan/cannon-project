@@ -18,17 +18,26 @@ use tokio::sync::mpsc;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    if args.url ==  "" && args.update{
+    if args.update{
         update()?;
         return Ok(());
     }
+
+    let url_str = match args.url.as_ref(){
+        Some(u) => u.clone(),
+        None =>{
+           eprintln!("{} {}", "error:".red().bold(), "O argumento '--url <URL>' é obrigatório para iniciar o teste.");
+            std::process::exit(1); 
+        }
+    };
+
     let client = Arc::new(
         reqwest::Client::builder()
             .user_agent(&args.user_agent)
             .timeout(std::time::Duration::from_millis(args.timeout))
             .build()?,
     );
-    let url = Arc::new(args.url.clone());
+    let url = Arc::new(url_str);
     let headers = Arc::new(args.headers.clone());
 
     let (tx, mut rx) = mpsc::channel(args.count as usize);
@@ -333,22 +342,32 @@ fn print_banner() {
     println!();
 }
 
-fn update() -> Result<(), Box<dyn std::error::Error>>{
+fn update() -> Result<(), Box<dyn std::error::Error>> {
+    // Definimos o identificador de destino que corresponde ao nome do asset no GitHub
+    let target = if cfg!(target_os = "linux") {
+        "linux-x64"
+    } else if cfg!(target_os = "windows") {
+        "windows-x64.exe"
+    } else if cfg!(target_os = "macos") {
+        "macos-x64"
+    } else {
+        ""
+    };
+
     let status = self_update::backends::github::Update::configure()
-        .repo_owner("FelipeFelipeRenan")
-        .repo_name("cannon-project")
-        .bin_name("cannon")
-        .show_download_progress(true)
-        .current_version(env!("CARGO_PKG_VERSION"))
+        .repo_owner("FelipeFelipeRenan") //
+        .repo_name("cannon-project")     //
+        .bin_name("cannon")              // Nome do binário local
+        .target(target)                  // Força a busca pelo asset que termina com este target
+        .show_download_progress(true)    //
+        .current_version(env!("CARGO_PKG_VERSION")) //
         .build()?
         .update()?;
 
-    if status.updated(){
-        println!("Atualizado com sucesso para a versão {}", status.version());
-
+    if status.updated() {
+        println!("✅ Atualizado com sucesso para a versão {}", status.version()); //
     } else {
-        println!("Você já está na versão mais recente: {}", status.version());
-
+        println!("✨ Você já está na versão mais recente: {}", status.version()); //
     }
 
     Ok(())

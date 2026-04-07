@@ -4,7 +4,7 @@ use clap::Parser;
 #[command(author, version, about = "Cannon - Uma ferramenta de teste de carga em Rust")]
 pub struct Args {
     #[arg(short, long)]
-    pub url: String,
+    pub url: Option<String>,
 
     #[arg(short, long, default_value_t = 1)]
     pub count: u32,
