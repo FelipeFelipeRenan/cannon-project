@@ -160,6 +160,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let total_secs = start_test.elapsed().as_secs_f64();
     let actual_rps = success_count as f64 / total_secs;
 
+    // Satisfatórias (<= 50ms) e Toleráveis (51ms a 200ms)
+    let t_us = 50_000; // 50ms em microssegundos
+    let satisfied = hist.count_between(0, t_us);
+    let tolerating = hist.count_between(t_us + 1, t_us * 4);
+    let apdex = if hist.len() > 0 {
+        (satisfied as f64 + (tolerating as f64 / 2.0)) / hist.len() as f64
+    } else {
+        0.0
+    };
+
     // Impressão do Relatório
     print_summary(
         success_count,
@@ -194,6 +204,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             status_codes: status_for_report,
             errors: errors_for_report,
             duration_secs: total_secs,
+            apdex_score: apdex,
         };
 
         let json_data = serde_json::to_string_pretty(&report)?;

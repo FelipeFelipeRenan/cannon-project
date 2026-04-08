@@ -41,6 +41,8 @@ pub struct FinalReport {
     #[tabled(skip)]
     pub errors: HashMap<String, u64>,
     pub duration_secs: f64,
+
+    pub apdex_score: f64,
 }
 
 #[derive(Tabled)]
@@ -95,11 +97,10 @@ pub fn render_ascii_histogram(hist: &hdrhistogram::Histogram<u64>) {
         }
     }
 }
-
 pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()> {
     let template = r#"
     <!DOCTYPE html>
-    <html lang="pt-BR">
+    <html lang="pt-PT">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -109,9 +110,15 @@ pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()
             :root { --bg: #0d1117; --card-bg: #161b22; --border: #30363d; --text: #c9d1d9; --blue: #58a6ff; --green: #3fb950; --red: #f85149; --yellow: #d29922; }
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; }
             .container { max-width: 1200px; margin: auto; background: var(--card-bg); padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-            h1 { text-align: center; color: var(--blue); font-size: 2.5em; margin-bottom: 5px; }
+            
+            /* ESTILOS DO BOTÃO DE IMPRESSÃO */
+            .header-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 20px; }
+            .header-bar h1 { margin: 0; color: var(--blue); font-size: 2em; }
+            .print-btn { background: var(--blue); color: #fff; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; transition: 0.2s; }
+            .print-btn:hover { background: #388bfd; }
+            
             .subtitle { text-align: center; color: #8b949e; margin-top: 0; margin-bottom: 30px; font-weight: 500; }
-            .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 30px; }
+            .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px; }
             .card { background: #21262d; padding: 20px; border-radius: 8px; text-align: center; border: 1px solid var(--border); }
             .card h3 { margin: 0 0 10px 0; font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; }
             .card p { margin: 0; font-size: 26px; font-weight: bold; color: #fff; }
@@ -125,12 +132,24 @@ pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()
             table { width: 100%; border-collapse: collapse; margin-top: 10px; }
             th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--border); }
             th { color: #8b949e; text-transform: uppercase; font-size: 13px; }
+            
+            /* OTIMIZAÇÃO PARA PDF */
+            @media print {
+                body { background: #fff; color: #000; }
+                .container, .card, .chart-container, .errors-section { background: #fff; border: 1px solid #ccc; box-shadow: none; }
+                .print-btn { display: none; } /* Esconde o botão ao imprimir */
+                .subtitle, .card h3, th { color: #555; }
+                * { -webkit-print-color-adjust: exact; color-adjust: exact; }
+            }
             @media (max-width: 768px) { .charts-grid { grid-template-columns: 1fr; } }
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>🚀 Telemetria Cannon</h1>
+            <div class="header-bar">
+                <h1>🚀 Telemetria Cannon</h1>
+                <button class="print-btn" onclick="window.print()">🖨️ Guardar PDF</button>
+            </div>
             <p class="subtitle">Análise Detalhada de Performance HTTP</p>
             
             <div id="summary" class="grid"></div>
@@ -145,7 +164,7 @@ pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()
             </div>
 
             <div id="errorsSection" class="errors-section">
-                <h3 style="color: var(--red); margin-top: 0;">⚠️ Registro de Falhas</h3>
+                <h3 style="color: var(--red); margin-top: 0;">⚠️ Registo de Falhas</h3>
                 <table id="errorsTable">
                     <thead><tr><th>Tipo de Erro</th><th>Ocorrências</th></tr></thead>
                     <tbody></tbody>
@@ -156,19 +175,24 @@ pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()
         <script>
             const data = /*JSON_PAYLOAD*/;
 
-            // Cálculos de Rede
             const mbSent = data.bytes_sent / 1048576;
             const mbRecv = data.bytes_received / 1048576;
-            const tpSent = (mbSent / data.duration_secs).toFixed(2);
             const tpRecv = (mbRecv / data.duration_secs).toFixed(2);
 
-            // Preenchendo os Cards
+            // Calcula a cor e o rótulo do Apdex
+            let apdexColor = 'fail-text';
+            let apdexLabel = 'Inaceitável';
+            if (data.apdex_score >= 0.94) { apdexColor = 'success-text'; apdexLabel = 'Excelente'; }
+            else if (data.apdex_score >= 0.85) { apdexColor = 'success-text'; apdexLabel = 'Bom'; }
+            else if (data.apdex_score >= 0.70) { apdexColor = 'warn-text'; apdexLabel = 'Razoável'; }
+            else if (data.apdex_score >= 0.50) { apdexColor = 'warn-text'; apdexLabel = 'Pobre'; }
+
             const summaryDiv = document.getElementById('summary');
             const metrics = [
                 { label: 'Alvo', value: data.target, cls: 'target-text' },
-                { label: 'Duração', value: data.duration_secs.toFixed(1) + 's' },
-                { label: 'RPS Real', value: data.actual_rps.toFixed(2) + ' req/s', cls: 'warn-text' },
-                { label: 'Download Máx', value: tpRecv + ' MB/s', cls: 'warn-text' },
+                { label: 'Índice Apdex', value: data.apdex_score.toFixed(2) + ' (' + apdexLabel + ')', cls: apdexColor }, // --- NOVO CARD AQUI ---
+                { label: 'RPS Real', value: data.actual_rps.toFixed(2) + ' req/s' },
+                { label: 'Download Máx', value: tpRecv + ' MB/s' },
                 { label: 'Sucessos', value: data.successes, cls: 'success-text' },
                 { label: 'Falhas', value: data.failures, cls: data.failures > 0 ? 'fail-text' : '' }
             ];
@@ -177,7 +201,7 @@ pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()
                 summaryDiv.innerHTML += `<div class="card"><h3>${m.label}</h3><p class="${m.cls || ''}">${m.value}</p></div>`;
             });
 
-            Chart.defaults.color = '#c9d1d9';
+            Chart.defaults.color = '#8b949e';
             Chart.defaults.font.family = "'Segoe UI', sans-serif";
 
             // Gráfico de Latência
@@ -197,17 +221,16 @@ pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()
                 options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Percentis de Latência' } }, scales: { y: { beginAtZero: true, grid: { color: '#30363d' } }, x: { grid: { display: false } } } }
             });
 
-            // Preparando dados para o Gráfico de Status Codes
+            // Gráfico de Status Codes
             const statusLabels = Object.keys(data.status_codes).map(code => `HTTP ${code}`);
             const statusValues = Object.values(data.status_codes);
             const statusColors = Object.keys(data.status_codes).map(code => {
-                if(code.startsWith('2')) return '#3fb950'; // Verde
-                if(code.startsWith('4')) return '#d29922'; // Amarelo
-                if(code.startsWith('5')) return '#f85149'; // Vermelho
-                return '#8b949e'; // Outros
+                if(code.startsWith('2')) return '#3fb950';
+                if(code.startsWith('4')) return '#d29922';
+                if(code.startsWith('5')) return '#f85149';
+                return '#8b949e';
             });
 
-            // Gráfico de Status Codes
             new Chart(document.getElementById('statusChart').getContext('2d'), {
                 type: 'doughnut',
                 data: {
