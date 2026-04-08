@@ -1,103 +1,4 @@
-use std::collections::HashMap;
 
-use colored::Colorize;
-use serde::Serialize;
-use tabled::Tabled;
-
-pub struct ShotResult {
-    pub success: bool,
-    pub duration: std::time::Duration,
-    pub status_code: Option<u16>,
-    pub error: Option<String>,
-    pub assertion_success: bool,
-    pub bytes_sent: u64,
-    pub bytes_received: u64,
-}
-
-#[derive(Serialize, Tabled)]
-pub struct FinalReport {
-    #[tabled(rename = "Target URL")]
-    pub target: String,
-    #[tabled(rename = "Total")]
-    pub total_requests: u32,
-    #[tabled(rename = "Workers")]
-    pub concurrency: u32,
-    #[tabled(rename = "Success")]
-    pub successes: u64,
-    #[tabled(rename = "Failures")]
-    pub failures: u64,
-    pub min_ms: f64,
-    pub avg_ms: f64,
-    pub p50_ms: f64,
-    pub p95_ms: f64,
-    pub p99_ms: f64,
-    pub max_ms: f64,
-
-    pub actual_rps: f64,
-    pub bytes_sent: u64,
-    pub bytes_received: u64,
-    #[tabled(skip)] 
-    pub status_codes: HashMap<u16, u64>,
-    #[tabled(skip)]
-    pub errors: HashMap<String, u64>,
-    pub duration_secs: f64,
-}
-
-#[derive(Tabled)]
-pub struct LatencyMetrics {
-    pub metric: String,
-    pub value: String,
-}
-
-pub fn to_ms(us: u64) -> f64 {
-    us as f64 / 1000.0
-}
-
-pub fn render_ascii_histogram(hist: &hdrhistogram::Histogram<u64>) {
-    println!("\n{}", "📊 DISTRIBUIÇÃO DE LATÊNCIA".bold().bright_white());
-
-    let min = hist.min();
-    let max = hist.max();
-
-    let step = (max - min) / 10;
-
-    let step = if step == 0 { 1 } else { step };
-
-    let mut max_count = 0;
-
-    for bucket in hist.iter_linear(step) {
-        if bucket.count_since_last_iteration() > max_count {
-            max_count = bucket.count_since_last_iteration();
-        }
-    }
-
-    if max_count == 0 {
-        return;
-    }
-
-    for bucket in hist.iter_linear(step) {
-        let count = bucket.count_since_last_iteration();
-        let percent = (count as f64 / hist.len() as f64) * 100.0;
-
-        let bar_width = (count as f64 / max_count as f64 * 30.0) as usize;
-        let bar = "█".repeat(bar_width);
-
-        println!(
-            "{:>8.2}ms [{:<30}] {:>6} ({:.1}%)",
-            to_ms(bucket.value_iterated_to()),
-            bar.cyan(),
-            count,
-            percent
-        );
-
-        if bucket.value_iterated_to() >= max {
-            break;
-        }
-    }
-}
-
-pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()> {
-    let template = r#"
     <!DOCTYPE html>
     <html lang="pt-BR">
     <head>
@@ -154,7 +55,27 @@ pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()
         </div>
 
         <script>
-            const data = /*JSON_PAYLOAD*/;
+            const data = {
+  "target": "http://localhost:8081/api/v1/accounts",
+  "total_requests": 1000,
+  "concurrency": 20,
+  "successes": 1000,
+  "failures": 0,
+  "min_ms": 5.884,
+  "avg_ms": 59.114,
+  "p50_ms": 49.919,
+  "p95_ms": 131.455,
+  "p99_ms": 171.007,
+  "max_ms": 239.231,
+  "actual_rps": 335.6304385109448,
+  "bytes_sent": 0,
+  "bytes_received": 13748000,
+  "status_codes": {
+    "200": 1000
+  },
+  "errors": {},
+  "duration_secs": 2.9794675489999998
+};
 
             // Cálculos de Rede
             const mbSent = data.bytes_sent / 1048576;
@@ -233,9 +154,4 @@ pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()
         </script>
     </body>
     </html>
-    "#;
-
-    let final_html = template.replace("/*JSON_PAYLOAD*/", report_json);
-    std::fs::write(path, final_html)?;
-    Ok(())
-}
+    

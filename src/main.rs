@@ -155,6 +155,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     pb.finish_with_message("Concluído");
 
+    let status_for_report = status_counts.clone();
+    let errors_for_report = error_counts.clone();
+    let total_secs = start_test.elapsed().as_secs_f64();
+    let actual_rps = success_count as f64 / total_secs;
+
     // Impressão do Relatório
     print_summary(
         success_count,
@@ -169,9 +174,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         total_bytes_received,
     );
 
-    // Exportação JSON
-    if let Some(path) = &args.output {
-        save_report(&path, &args, &url, success_count, failure_count, &hist)?;
+    // Exportação de Dados (JSON / HTML)
+    if args.output.is_some() || args.html.is_some() {
+        let report = FinalReport {
+            target: url.to_string(),
+            total_requests: args.count,
+            concurrency: args.workers,
+            successes: success_count,
+            failures: failure_count,
+            min_ms: to_ms(hist.min()),
+            avg_ms: to_ms(hist.mean() as u64),
+            p50_ms: to_ms(hist.value_at_quantile(0.5)),
+            p95_ms: to_ms(hist.value_at_quantile(0.95)),
+            p99_ms: to_ms(hist.value_at_quantile(0.99)),
+            max_ms: to_ms(hist.max()),
+            actual_rps,
+            bytes_sent: total_bytes_sent,
+            bytes_received: total_bytes_received,
+            status_codes: status_for_report,
+            errors: errors_for_report,
+            duration_secs: total_secs,
+        };
+
+        let json_data = serde_json::to_string_pretty(&report)?;
+
+        if let Some(path) = &args.output {
+            std::fs::write(path, &json_data)?;
+            println!(
+                "📂 Relatório JSON salvo com sucesso em {}!",
+                path.bright_cyan()
+            );
+        }
+
+        if let Some(path) = &args.html {
+            report::generate_html_report(path, &json_data)?;
+            println!(
+                "🌐 Relatório HTML salvo com sucesso em {}!",
+                path.bright_cyan()
+            );
+        }
     }
 
     Ok(())
@@ -320,33 +361,6 @@ fn print_summary(
 
     println!("\n{}", "-------------------------".bright_black());
     println!("Teste finalizado em {}s", total.as_secs());
-}
-
-fn save_report(
-    path: &str,
-    args: &Args,
-    url: &str,
-    successes: u64,
-    failures: u64,
-    hist: &Histogram<u64>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let report = FinalReport {
-        target: url.to_string(),
-        total_requests: args.count,
-        concurrency: args.workers,
-        successes,
-        failures,
-        min_ms: to_ms(hist.min()),
-        avg_ms: to_ms(hist.mean() as u64),
-        p50_ms: to_ms(hist.value_at_quantile(0.5)),
-        p95_ms: to_ms(hist.value_at_quantile(0.95)),
-        p99_ms: to_ms(hist.value_at_quantile(0.99)),
-        max_ms: to_ms(hist.max()),
-    };
-    let json = serde_json::to_string_pretty(&report)?;
-    std::fs::write(path, json)?;
-    println!("📂 Relatório salvo com sucesso!");
-    Ok(())
 }
 
 fn parse_duration(s: &str) -> u64 {

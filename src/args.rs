@@ -41,5 +41,8 @@ pub struct Args {
 
     #[arg(long)]
     pub update: bool,
+
+    #[arg(long)]
+    pub html: Option<String>,
 }
 
