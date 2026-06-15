@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::{
     sync::{mpsc, Semaphore},
-    time::{interval, Duration},
+    time::{Duration},
 };
 
 pub async fn run_producer(
@@ -25,23 +25,30 @@ pub async fn run_producer(
 
     let method = Method::from_bytes(method_str.to_uppercase().as_bytes()).unwrap_or(Method::GET);
 
-    let mut ticker = if let Some(r) = rps {
-        let mut int = interval(Duration::from_secs_f64(1.0 / r as f64));
-
-        int.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        Some(int)
-    } else {
-        None
-    };
 
     let start_engine = Instant::now();
     let target_rps = rps.unwrap_or(0) as f64;
     let body_arc = body.map(Arc::new);
     let expect_arc = expect.map(Arc::new);
 
+    let mut next_shot_time = tokio::time::Instant::now();
+
     for _ in 0..count {
-        if let Some(ref mut t) = ticker {
-            t.tick().await;
+
+        if target_rps > 0.0 {
+            let elapsed = start_engine.elapsed().as_secs_f64();
+            let current_rps = if ramp_up_secs > 0 && elapsed < ramp_up_secs as f64{
+                let progress = elapsed / ramp_up_secs as f64;
+                1.0 + (target_rps - 1.0) + progress
+            } else {
+                target_rps
+            };
+
+            let delay = Duration::from_secs_f64(1.0 / current_rps);
+            next_shot_time += delay;
+            
+            tokio::time::sleep_until(next_shot_time).await;
+        
         }
         let permit = Arc::clone(&semaphore).acquire_owned().await.unwrap();
         let client_clone = Arc::clone(&client);

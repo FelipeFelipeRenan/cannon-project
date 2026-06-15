@@ -37,6 +37,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Arc::new(
         reqwest::Client::builder()
+            .tcp_nodelay(true)
+            .pool_max_idle_per_host(args.workers as usize)
+            .pool_idle_timeout(Some(std::time::Duration::from_secs(90)))
             .user_agent(&args.user_agent)
             .timeout(std::time::Duration::from_millis(args.timeout))
             .build()?,
@@ -44,7 +47,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let url = Arc::new(url_str);
     let headers = Arc::new(args.headers.clone());
 
-    let (tx, mut rx) = mpsc::channel(args.count as usize);
+    let buffer_size = std::cmp::min(10_000, (args.workers * 2) as usize).max(1);
+
+
+    let (tx, mut rx) = mpsc::channel(buffer_size);
 
     print_banner();
 
@@ -118,11 +124,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         total_bytes_sent += res.bytes_sent;
                         total_bytes_received += res.bytes_received;
+
                         let elapsed = start_test.elapsed().as_secs_f64();
                         if elapsed > 0.1 {
                             let total_reqs = success_count + failure_count;
-                            let rps = total_reqs as f64 / elapsed;
-                            pb.set_message(format!("| ⚡ {:.1} RPS", rps));
+                            if total_reqs % 25 == 0 && elapsed > 0.1 {
+                                let rps = total_reqs as f64 / elapsed;
+                                 pb.set_message(format!("| ⚡ {:.1} RPS", rps));
+    }
+
                         }
 
 
