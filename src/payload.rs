@@ -2,46 +2,56 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rand::{distr::Alphanumeric, RngExt};
 use uuid::Uuid;
+use std::fmt::Write;
 
 pub fn process_payload(template: &str) -> String {
-    let mut result = template.to_string();
-
-    while result.contains("{{uuid}}") {
-        result = result.replacen("{{uuid}}", &Uuid::new_v4().to_string(), 1);
+    if !template.contains("{{"){
+        return template.to_string();
     }
 
-    while result.contains("{{timestamp}}") {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-        result = result.replacen("{{timestamp}}", &now.to_string(), 1);
+    let mut result = String::with_capacity(template.len() + 128);
+    let mut rest = template;
+
+    while let Some(start) = rest.find("{{"){
+        result.push_str(&rest[..start]);
+        rest = &rest[start + 2..];
+
+        if let Some(end) = rest.find("}}") {
+            let tag = &rest[..end];
+            match tag {
+                "uuid" => {
+                    let _ = write!(result, "{}", Uuid::new_v4());
+                }
+                "timestamp" => {
+                    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+                    let _ = write!(result, "{}", now);
+                }
+                "user" | "random" => {
+                    let random_str: String = rand::rng().sample_iter(&Alphanumeric).take(8).map(char::from).collect();
+                    result.push_str(&random_str.to_lowercase());
+                }
+                "email" =>{
+                    let random_str: String = rand::rng().sample_iter(&Alphanumeric).take(8).map(char::from).collect();
+                    result.push_str(&random_str.to_lowercase());
+                    result.push_str("@example.com");
+                }
+                "number" => {
+                    let random_num: u32 = rand::rng().random_range(10..9999);
+                    let _ = write!(result, "{}", random_num);
+                }
+
+                _ =>{
+                    result.push_str("{{");
+                    result.push_str(tag);
+                    result.push_str("}}");
+                }
+            }
+            rest = &rest[end + 2..];
+        }else {
+            result.push_str("{{");
+            break;
+        }
     }
-
-    while result.contains("{{user}}") {
-        let random_str: String = rand::rng()
-            .sample_iter(&Alphanumeric)
-            .take(8)
-            .map(char::from)
-            .collect();
-
-        result = result.replacen("{{user}}", &random_str.to_lowercase(), 1);
-    }
-
-    while result.contains("{{email}}") {
-        let random_str: String = rand::rng()
-            .sample_iter(&Alphanumeric)
-            .take(8)
-            .map(char::from)
-            .collect();
-
-        let email = format!("{}@example.com", random_str.to_lowercase());
-        result = result.replacen("{{email}}", &email, 1);
-    }
-    while result.contains("{{number}}") {
-        let random_num: u32 = rand::rng().random_range(10..9999);
-        result = result.replacen("{{number}}", &random_num.to_string(), 1);
-    }
-
+    result.push_str(rest);
     result
 }
