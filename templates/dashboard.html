@@ -59,28 +59,7 @@
         </div>
     </div>
     <script>
-        const data = {
-  "target": "http://localhost:8081/api/v1/accounts",
-  "total_requests": 1000,
-  "concurrency": 60,
-  "successes": 1000,
-  "failures": 0,
-  "min_ms": 9.072,
-  "avg_ms": 197.742,
-  "p50_ms": 187.263,
-  "p95_ms": 354.303,
-  "p99_ms": 474.623,
-  "max_ms": 609.791,
-  "actual_rps": 290.3247028812781,
-  "bytes_sent": 0,
-  "bytes_received": 13748000,
-  "status_codes": {
-    "200": 1000
-  },
-  "errors": {},
-  "duration_secs": 3.444419266,
-  "apdex_score": 0.2975
-};
+        const data = /*JSON_PAYLOAD*/;
         const mbSent = data.bytes_sent / 1048576;
         const mbRecv = data.bytes_received / 1048576;
         const tpRecv = (mbRecv / data.duration_secs).toFixed(2);

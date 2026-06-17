@@ -44,5 +44,11 @@ pub struct Args {
 
     #[arg(long)]
     pub html: Option<String>,
+
+    #[arg(short = 'k', long)]
+    pub insecure: bool,
+
+    #[arg(long, default_value_t = 50)]
+    pub apdex_t: u64,
 }
 

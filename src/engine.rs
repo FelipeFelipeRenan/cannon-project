@@ -1,11 +1,15 @@
 use crate::payload;
 use crate::report::ShotResult;
-use reqwest::Method;
+use reqwest::{
+    header::{HeaderMap, HeaderName, HeaderValue},
+    Method,
+};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::{
     sync::{mpsc, Semaphore},
-    time::{Duration},
+    time::Duration,
 };
 
 pub async fn run_producer(
@@ -22,90 +26,81 @@ pub async fn run_producer(
     ramp_up_secs: u64,
 ) {
     let semaphore = Arc::new(Semaphore::new(workers as usize));
-
     let method = Method::from_bytes(method_str.to_uppercase().as_bytes()).unwrap_or(Method::GET);
 
+    // Compilação de Headers (Zero-cost por requisição)
+    let mut header_map = HeaderMap::new();
+    let mut has_content_type = false;
+    for h in headers.iter() {
+        let parts: Vec<&str> = h.splitn(2, ':').collect();
+        if parts.len() == 2 {
+            let key = parts[0].trim();
+            let val = parts[1].trim();
+            if key.eq_ignore_ascii_case("content-type") {
+                has_content_type = true;
+            }
+            if let (Ok(k), Ok(v)) = (HeaderName::from_str(key), HeaderValue::from_str(val)) {
+                header_map.insert(k, v);
+            }
+        }
+    }
+
+    if body.is_some() && !has_content_type {
+        header_map.insert("content-type", HeaderValue::from_static("application/json"));
+    }
 
     let start_engine = Instant::now();
     let target_rps = rps.unwrap_or(0) as f64;
     let body_arc = body.map(Arc::new);
     let expect_arc = expect.map(Arc::new);
-
     let mut next_shot_time = tokio::time::Instant::now();
 
     for _ in 0..count {
-
+        // Lógica única e centralizada de Ramp-up e RPS Constante
         if target_rps > 0.0 {
             let elapsed = start_engine.elapsed().as_secs_f64();
-            let current_rps = if ramp_up_secs > 0 && elapsed < ramp_up_secs as f64{
+            let current_rps = if ramp_up_secs > 0 && elapsed < ramp_up_secs as f64 {
                 let progress = elapsed / ramp_up_secs as f64;
-                1.0 + (target_rps - 1.0) + progress
+                1.0 + (target_rps - 1.0) * progress
             } else {
                 target_rps
             };
 
             let delay = Duration::from_secs_f64(1.0 / current_rps);
             next_shot_time += delay;
-            
             tokio::time::sleep_until(next_shot_time).await;
-        
         }
-        let permit = Arc::clone(&semaphore).acquire_owned().await.unwrap();
+
+        // Adquire permissão de forma segura
+        let permit = match Arc::clone(&semaphore).acquire_owned().await {
+            Ok(p) => p,
+            Err(_) => break, // Se o semáforo fechar, encerra graciosamente
+        };
+
         let client_clone = Arc::clone(&client);
         let url_clone = Arc::clone(&url);
         let tx_clone = tx.clone();
         let body_clone = body_arc.as_ref().map(Arc::clone);
         let method_clone = method.clone();
-        let headers_clone = Arc::clone(&headers);
         let expect_clone = expect_arc.as_ref().map(Arc::clone);
+        let header_map_clone = header_map.clone();
 
         tokio::spawn(async move {
-            if target_rps > 0.0 {
-                let elapsed = start_engine.elapsed().as_secs_f64();
-                let current_rps = if ramp_up_secs > 0 && elapsed < ramp_up_secs as f64 {
-                    let progress = elapsed / ramp_up_secs as f64;
-                    // Sobe de 1.0 até o target_rps linearmente
-                    1.0 + (target_rps - 1.0) * progress
-                } else {
-                    target_rps
-                };
-
-                let delay = Duration::from_secs_f64(1.0 / current_rps);
-                tokio::time::sleep(delay).await;
-            }
-            let _permit = permit;
+            let _permit = permit; // A concorrência é garantida aqui
             let start_request = Instant::now();
 
-            let mut request_builder = client_clone.request(method_clone, url_clone.as_str());
-
-            // 1. Aplicar headers e detectar Content-Type manual
-            let mut has_content_type = false;
-            for h in headers_clone.iter() {
-                let parts: Vec<&str> = h.splitn(2, ':').collect();
-                if parts.len() == 2 {
-                    let key = parts[0].trim();
-                    if key.to_lowercase() == "content-type" {
-                        has_content_type = true;
-                    }
-                    request_builder = request_builder.header(key, parts[1].trim());
-                }
-            }
-
-            // 2. Aplicar corpo dinâmico
+            let mut request_builder = client_clone
+                .request(method_clone, url_clone.as_str())
+                .headers(header_map_clone);
 
             let mut bytes_sent = 0;
 
             if let Some(b) = body_clone {
                 let dynamic_body = payload::process_payload(&b);
                 bytes_sent = dynamic_body.len() as u64;
-
-                if !has_content_type {
-                    request_builder = request_builder.header("Content-Type", "application/json");
-                }
                 request_builder = request_builder.body(dynamic_body);
             }
 
-            // 3. Executar e Validar
             let response = request_builder.send().await;
 
             let (success, status_code, error, assertion_success, bytes_received) = match response {
@@ -120,7 +115,6 @@ pub async fn run_producer(
                         Ok(b) => {
                             if is_success {
                                 if let Some(expected) = expect_clone {
-                                    // Converte de lossy utf8 apenas se precisarmos checar o expect
                                     let text = String::from_utf8_lossy(&b);
                                     if !text.contains(expected.as_str()) {
                                         is_success = false;
@@ -129,7 +123,7 @@ pub async fn run_producer(
                                     }
                                 }
                             }
-                            b.len() as u64 // Pega o tamanho real dos bytes baixados
+                            b.len() as u64
                         }
                         Err(_) => {
                             is_success = false;
@@ -150,7 +144,6 @@ pub async fn run_producer(
                     (false, None, Some(msg), true, 0)
                 }
             };
-            // Se a requisição foi 2xx e o usuário quer validar o conteúdo
 
             let _ = tx_clone
                 .send(ShotResult {

@@ -35,21 +35,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let client = Arc::new(
+    let mut client_builder = 
         reqwest::Client::builder()
             .tcp_nodelay(true)
             .pool_max_idle_per_host(args.workers as usize)
             .pool_idle_timeout(Some(std::time::Duration::from_secs(90)))
             .user_agent(&args.user_agent)
-            .timeout(std::time::Duration::from_millis(args.timeout))
-            .build()?,
-    );
+            .timeout(std::time::Duration::from_millis(args.timeout));
+
+        if args.insecure{
+            client_builder = client_builder.danger_accept_invalid_certs(true);
+        }
+
+        let client = Arc::new(client_builder.build()?);
+            
     let url = Arc::new(url_str);
     let headers = Arc::new(args.headers.clone());
 
     let buffer_size = std::cmp::min(10_000, (args.workers * 2) as usize).max(1);
 
-
+    // change to a fix size like 10_000
     let (tx, mut rx) = mpsc::channel(buffer_size);
 
     print_banner();
@@ -117,50 +122,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         tokio::select! {
-            result = rx.recv() => {
-                match result {
-                    Some(res) => {
-                        pb.inc(1);
+                result = rx.recv() => {
+                    match result {
+                        Some(res) => {
+                            pb.inc(1);
 
-                        total_bytes_sent += res.bytes_sent;
-                        total_bytes_received += res.bytes_received;
+                            total_bytes_sent += res.bytes_sent;
+                            total_bytes_received += res.bytes_received;
 
-                        let elapsed = start_test.elapsed().as_secs_f64();
-                        if elapsed > 0.1 {
-                            let total_reqs = success_count + failure_count;
-                            if total_reqs % 25 == 0 && elapsed > 0.1 {
-                                let rps = total_reqs as f64 / elapsed;
-                                 pb.set_message(format!("| ⚡ {:.1} RPS", rps));
-    }
+                            let elapsed = start_test.elapsed().as_secs_f64();
+                            if elapsed > 0.1 {
+                                let total_reqs = success_count + failure_count;
+                                if total_reqs % 25 == 0 && elapsed > 0.1 {
+                                    let rps = total_reqs as f64 / elapsed;
+                                     pb.set_message(format!("| ⚡ {:.1} RPS", rps));
+        }
 
-                        }
+                            }
 
 
-                        if let Some(code) = res.status_code {
-                            *status_counts.entry(code).or_insert(0) += 1;
-                        }
+                            if let Some(code) = res.status_code {
+                                *status_counts.entry(code).or_insert(0) += 1;
+                            }
 
-                        if res.success {
-                            success_count += 1;
-                            let _ = hist.record(res.duration.as_micros() as u64);
-                        } else {
-                            failure_count += 1;
-                        }
-                        if let Some(err_msg) = res.error{
-                            *error_counts.entry(err_msg).or_insert(0) += 1;
-                        }
-                        if !res.assertion_success {
-                            assertion_failures += 1;
-                        }
-                    },
-                    None => break,
+                            if res.success {
+                                success_count += 1;
+                                let _ = hist.record(res.duration.as_micros() as u64);
+                            } else {
+                                failure_count += 1;
+                            }
+                            if let Some(err_msg) = res.error{
+                                *error_counts.entry(err_msg).or_insert(0) += 1;
+                            }
+                            if !res.assertion_success {
+                                assertion_failures += 1;
+                            }
+                        },
+                        None => break,
+                    }
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    println!("\n\n{}", "⚠️ Interrupção detectada! Preparando relatório parcial...".yellow().bold());
+                    break;
                 }
             }
-            _ = tokio::signal::ctrl_c() => {
-                println!("\n\n{}", "⚠️ Interrupção detectada! Preparando relatório parcial...".yellow().bold());
-                break;
-            }
-        }
     }
 
     pb.finish_with_message("Concluído");
@@ -171,7 +176,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let actual_rps = success_count as f64 / total_secs;
 
     // Satisfatórias (<= 50ms) e Toleráveis (51ms a 200ms)
-    let t_us = 50_000; // 50ms em microssegundos
+    let t_us = args.apdex_t * 1000; // 50ms em microssegundos
     let satisfied = hist.count_between(0, t_us);
     let tolerating = hist.count_between(t_us + 1, t_us * 4);
     let apdex = if hist.len() > 0 {
