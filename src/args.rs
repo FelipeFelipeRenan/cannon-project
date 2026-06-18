@@ -1,10 +1,14 @@
 use clap::Parser;
+use serde::Deserialize;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Cannon - Uma ferramenta de teste de carga em Rust")]
 pub struct Args {
     #[arg(short, long)]
     pub url: Option<String>,
+
+    #[arg(short = 'f', long)]
+    pub config: Option<String>,
 
     #[arg(short, long, default_value_t = 1)]
     pub count: u32,
@@ -50,6 +54,21 @@ pub struct Args {
 
     #[arg(long, default_value_t = 50)]
     pub apdex_t: u64,
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub struct FileConfig {
+    pub url: Option<String>,
+    pub workers: Option<u32>,
+    pub count: Option<u32>,
+    pub rps: Option<u32>,
+    pub timeout: Option<u64>,
+    pub method: Option<String>,
+    pub headers: Option<Vec<String>>,
+    pub body: Option<String>,
+    pub expect: Option<String>,
+    pub apdex_t: Option<u64>,
+    pub insecure: Option<bool>,
 }
 
 #[cfg(test)]

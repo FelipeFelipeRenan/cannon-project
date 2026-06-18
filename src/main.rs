@@ -16,12 +16,46 @@ use tokio::sync::mpsc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
+    let mut args = Args::parse();
+
+// Se o utilizador passou um ficheiro YAML, lemos e fazemos o merge
+    if let Some(config_path) = &args.config {
+        let yaml_str = std::fs::read_to_string(config_path)
+            .unwrap_or_else(|_| panic!("❌ Erro: Não foi possível ler o arquivo {}", config_path));
+        
+        let conf: args::FileConfig = serde_yaml::from_str(&yaml_str)
+            .unwrap_or_else(|e| panic!("❌ Erro no formato YAML: {}", e));
+
+        // Regra de Ouro: O YAML sobrepõe os valores padrão da CLI
+        if conf.url.is_some() { args.url = conf.url; }
+        if let Some(w) = conf.workers { args.workers = w; }
+        if let Some(c) = conf.count { args.count = c; } // Aqui estava o bug! Agora o 5000 vai entrar.
+        if let Some(rps) = conf.rps { args.rps = Some(rps); }
+        if let Some(t) = conf.timeout { args.timeout = t; }
+        if let Some(m) = conf.method { args.method = m; }
+        if let Some(body) = conf.body { args.body = Some(body); }
+        if let Some(exp) = conf.expect { args.expect = Some(exp); }
+        if let Some(apdex) = conf.apdex_t { args.apdex_t = apdex; }
+        if let Some(ins) = conf.insecure { args.insecure = ins; }
+        
+        // Concatena headers do YAML com os headers passados na CLI (se houver)
+        if let Some(mut yaml_headers) = conf.headers {
+            yaml_headers.append(&mut args.headers);
+            args.headers = yaml_headers;
+        }
+    }
+    // Validação final de segurança: O URL tem que existir depois do merge
+    if args.url.is_none() {
+        eprintln!("❌ Erro: É necessário fornecer uma URL via flag (-u) ou no ficheiro YAML (--config)");
+        std::process::exit(1);
+    }
 
     if args.update {
         update()?;
         return Ok(());
     }
+
+    
 
     let url_str = match args.url.as_ref() {
         Some(u) => u.clone(),

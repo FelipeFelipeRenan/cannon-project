@@ -1,0 +1,10 @@
+url: "http://localhost:8081/api/v1/accounts"
+method: "GET"
+workers: 150
+count: 5000
+rps: 1000
+apdex_t: 150
+insecure: true
+headers:
+  - "Authorization: Bearer my_super_secret_token_from_env_vars"
+  - "Content-Type: application/json"
