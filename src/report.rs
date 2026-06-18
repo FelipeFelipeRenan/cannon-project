@@ -104,3 +104,17 @@ pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()
     std::fs::write(path, final_html)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_to_ms_conversion() {
+        // to_ms converte microssegundos (us) para milissegundos (ms)
+        assert_eq!(to_ms(1_000), 1.0);
+        assert_eq!(to_ms(500), 0.5);
+        assert_eq!(to_ms(1_500_000), 1500.0);
+        assert_eq!(to_ms(0), 0.0);
+    }
+}

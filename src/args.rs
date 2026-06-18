@@ -52,3 +52,48 @@ pub struct Args {
     pub apdex_t: u64,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn test_valid_basic_arguments() {
+        // Simula: cannon -u http://localhost -c 100
+        let args = Args::try_parse_from(["cannon", "-u", "http://localhost", "-c", "100"]).unwrap();
+        
+        assert_eq!(args.url.unwrap(), "http://localhost");
+        assert_eq!(args.count, 100);
+        assert_eq!(args.workers, 10, "O default de workers deve ser 10");
+        assert_eq!(args.method, "GET", "O default do método deve ser GET");
+    }
+
+    #[test]
+    fn test_missing_url_when_not_updating() {
+        // Se rodar "cannon" sem URL e sem a flag "--update", deve falhar no parse se a URL for obrigatória.
+        // Como no seu código a URL é Option<String> e validada no main.rs, o parse do clap passa.
+        let args = Args::try_parse_from(["cannon"]);
+        assert!(args.is_ok());
+        assert!(args.unwrap().url.is_none());
+    }
+
+    #[test]
+    fn test_custom_headers_parsing() {
+        // Simula: cannon -u http://localhost -H "Auth: Bearer 123" -H "Accept: application/json"
+        let args = Args::try_parse_from([
+            "cannon", 
+            "-u", "http://localhost", 
+            "-H", "Auth: Bearer 123", 
+            "-H", "Accept: application/json"
+        ]).unwrap();
+
+        assert_eq!(args.headers.len(), 2);
+        assert_eq!(args.headers[0], "Auth: Bearer 123");
+    }
+
+    #[test]
+    fn test_apdex_tolerance_default() {
+        let args = Args::try_parse_from(["cannon", "-u", "http://localhost"]).unwrap();
+        assert_eq!(args.apdex_t, 50, "O tempo tolerável do Apdex deve ser 50ms por padrão");
+    }
+}

@@ -456,3 +456,32 @@ fn update() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_duration_seconds() {
+        assert_eq!(parse_duration("15s"), 15);
+        assert_eq!(parse_duration("1S"), 1, "Deve ser case-insensitive");
+    }
+
+    #[test]
+    fn test_parse_duration_minutes() {
+        assert_eq!(parse_duration("2m"), 120);
+        assert_eq!(parse_duration("10M"), 600);
+    }
+
+    #[test]
+    fn test_parse_duration_raw_numbers() {
+        assert_eq!(parse_duration("45"), 45, "Números sem sufixo assumem segundos");
+    }
+
+    #[test]
+    fn test_parse_duration_invalid_input() {
+        assert_eq!(parse_duration("abc"), 0, "Inputs inválidos devem retornar 0");
+        assert_eq!(parse_duration(""), 0);
+    }
+}

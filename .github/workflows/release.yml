@@ -29,6 +29,17 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Check Formatting
+        run: cargo fmt -- --check
+
+      - name: Run Linter (Clippy)
+        run: cargo clippy -- -D warnings
+
+      - name: Run Tests
+        run: cargo test
 
       - name: Build release
         run: cargo build --release
@@ -37,7 +48,6 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: |
           cd target/release
-          # Procura por 'cannon' ou 'cannon-project'
           if [ -f "cannon" ]; then
             mv "cannon" "${{ matrix.asset_name }}"
           elif [ -f "cannon-project" ]; then
