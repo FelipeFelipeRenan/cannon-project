@@ -18,6 +18,12 @@ use tokio::sync::mpsc;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = Args::parse();
 
+        if args.update {
+        update()?;
+        return Ok(());
+    }
+
+
     // Se o utilizador passou um ficheiro YAML, lemos e fazemos o merge
     if let Some(config_path) = &args.config {
         let yaml_str = std::fs::read_to_string(config_path)
@@ -78,11 +84,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "❌ Erro: É necessário fornecer uma URL via flag (-u) ou no ficheiro YAML (--config)"
         );
         std::process::exit(1);
-    }
-
-    if args.update {
-        update()?;
-        return Ok(());
     }
 
     let url_str = match args.url.as_ref() {
