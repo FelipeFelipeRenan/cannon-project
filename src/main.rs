@@ -62,9 +62,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(u) => u.clone(),
         None => {
             eprintln!(
-                "{} {}",
-                "error:".red().bold(),
-                "O argumento '--url <URL>' é obrigatório para iniciar o teste."
+                "{} O argumento '--url <URL>' é obrigatório para iniciar o teste.",
+                "error:".red().bold()
             );
             std::process::exit(1);
         }
@@ -87,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let url = Arc::new(url_str);
     let headers = Arc::new(args.headers.clone());
 
-    let buffer_size = std::cmp::min( args.workers as usize, 100_00).max(1);
+    let buffer_size = std::cmp::min( args.workers as usize, 10_000).max(1);
 
     // change to a fix size like 10_000
     let (tx, mut rx) = mpsc::channel(buffer_size);
@@ -159,7 +158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut csv_writer = match &args.csv {
         Some(path) => {
             let mut w = csv::Writer::from_path(path).expect("❌ Erro ao criar arquivo CSV");
-            w.write_record(&["tempo_relativo_ms", "status", "latencia_ms", "erro"]).unwrap();
+            w.write_record(["tempo_relativo_ms", "status", "latencia_ms", "erro"]).unwrap();
             Some(w)
         }
         None => None,
@@ -226,7 +225,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = w.flush();
         println!("📊 Dados brutos exportados para {}!", args.csv.as_ref().unwrap().bright_cyan());
     }
-    
+
     let status_for_report = status_counts.clone();
     let errors_for_report = error_counts.clone();
     let total_secs = start_test.elapsed().as_secs_f64();
@@ -236,7 +235,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let t_us = args.apdex_t * 1000; // 50ms em microssegundos
     let satisfied = hist.count_between(0, t_us);
     let tolerating = hist.count_between(t_us + 1, t_us * 4);
-    let apdex = if hist.len() > 0 {
+    let apdex = if !hist.is_empty() {
         (satisfied as f64 + (tolerating as f64 / 2.0)) / hist.len() as f64
     } else {
         0.0
@@ -301,6 +300,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn print_summary(
     successes: u64,
     failures: u64,

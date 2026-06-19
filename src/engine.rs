@@ -12,6 +12,7 @@ use tokio::{
     time::Duration,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_producer(
     count: u32,
     workers: u32,
