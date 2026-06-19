@@ -18,27 +18,49 @@ use tokio::sync::mpsc;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = Args::parse();
 
-// Se o utilizador passou um ficheiro YAML, lemos e fazemos o merge
+    // Se o utilizador passou um ficheiro YAML, lemos e fazemos o merge
     if let Some(config_path) = &args.config {
         let yaml_str = std::fs::read_to_string(config_path)
             .unwrap_or_else(|_| panic!("❌ Erro: Não foi possível ler o arquivo {}", config_path));
-        
+
         let conf: args::FileConfig = serde_yaml::from_str(&yaml_str)
             .unwrap_or_else(|e| panic!("❌ Erro no formato YAML: {}", e));
 
         // Regra de Ouro: O YAML sobrepõe os valores padrão da CLI
-        if conf.url.is_some() { args.url = conf.url; }
-        if let Some(w) = conf.workers { args.workers = w; }
-        if let Some(c) = conf.count { args.count = c; }
-        if let Some(rps) = conf.rps { args.rps = Some(rps); }
-        if let Some(t) = conf.timeout { args.timeout = t; }
-        if let Some(m) = conf.method { args.method = m; }
-        if let Some(body) = conf.body { args.body = Some(body); }
-        if let Some(exp) = conf.expect { args.expect = Some(exp); }
-        if let Some(apdex) = conf.apdex_t { args.apdex_t = apdex; }
-        if let Some(ins) = conf.insecure { args.insecure = ins; }
-        if let Some(csv_path) = conf.csv{args.csv = Some(csv_path)} 
-        
+        if conf.url.is_some() {
+            args.url = conf.url;
+        }
+        if let Some(w) = conf.workers {
+            args.workers = w;
+        }
+        if let Some(c) = conf.count {
+            args.count = c;
+        }
+        if let Some(rps) = conf.rps {
+            args.rps = Some(rps);
+        }
+        if let Some(t) = conf.timeout {
+            args.timeout = t;
+        }
+        if let Some(m) = conf.method {
+            args.method = m;
+        }
+        if let Some(body) = conf.body {
+            args.body = Some(body);
+        }
+        if let Some(exp) = conf.expect {
+            args.expect = Some(exp);
+        }
+        if let Some(apdex) = conf.apdex_t {
+            args.apdex_t = apdex;
+        }
+        if let Some(ins) = conf.insecure {
+            args.insecure = ins;
+        }
+        if let Some(csv_path) = conf.csv {
+            args.csv = Some(csv_path)
+        }
+
         // Concatena headers do YAML com os headers passados na CLI (se houver)
         if let Some(mut yaml_headers) = conf.headers {
             yaml_headers.append(&mut args.headers);
@@ -47,7 +69,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // Validação final de segurança: O URL tem que existir depois do merge
     if args.url.is_none() {
-        eprintln!("❌ Erro: É necessário fornecer uma URL via flag (-u) ou no ficheiro YAML (--config)");
+        eprintln!(
+            "❌ Erro: É necessário fornecer uma URL via flag (-u) ou no ficheiro YAML (--config)"
+        );
         std::process::exit(1);
     }
 
@@ -55,8 +79,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         update()?;
         return Ok(());
     }
-
-    
 
     let url_str = match args.url.as_ref() {
         Some(u) => u.clone(),
@@ -69,24 +91,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let mut client_builder = 
-        reqwest::Client::builder()
-            .tcp_nodelay(true)
-            .pool_max_idle_per_host(args.workers as usize)
-            .pool_idle_timeout(Some(std::time::Duration::from_secs(90)))
-            .user_agent(&args.user_agent)
-            .timeout(std::time::Duration::from_millis(args.timeout));
+    let mut client_builder = reqwest::Client::builder()
+        .tcp_nodelay(true)
+        .pool_max_idle_per_host(args.workers as usize)
+        .pool_idle_timeout(Some(std::time::Duration::from_secs(90)))
+        .user_agent(&args.user_agent)
+        .timeout(std::time::Duration::from_millis(args.timeout));
 
-        if args.insecure{
-            client_builder = client_builder.danger_accept_invalid_certs(true);
-        }
+    if args.insecure {
+        client_builder = client_builder.danger_accept_invalid_certs(true);
+    }
 
-        let client = Arc::new(client_builder.build()?);
-            
+    let client = Arc::new(client_builder.build()?);
+
     let url = Arc::new(url_str);
     let headers = Arc::new(args.headers.clone());
 
-    let buffer_size = std::cmp::min( args.workers as usize, 10_000).max(1);
+    let buffer_size = std::cmp::min(args.workers as usize, 10_000).max(1);
 
     // change to a fix size like 10_000
     let (tx, mut rx) = mpsc::channel(buffer_size);
@@ -158,7 +179,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut csv_writer = match &args.csv {
         Some(path) => {
             let mut w = csv::Writer::from_path(path).expect("❌ Erro ao criar arquivo CSV");
-            w.write_record(["tempo_relativo_ms", "status", "latencia_ms", "erro"]).unwrap();
+            w.write_record(["tempo_relativo_ms", "status", "latencia_ms", "erro"])
+                .unwrap();
             Some(w)
         }
         None => None,
@@ -223,7 +245,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(mut w) = csv_writer {
         let _ = w.flush();
-        println!("📊 Dados brutos exportados para {}!", args.csv.as_ref().unwrap().bright_cyan());
+        println!(
+            "📊 Dados brutos exportados para {}!",
+            args.csv.as_ref().unwrap().bright_cyan()
+        );
     }
 
     let status_for_report = status_counts.clone();
@@ -514,7 +539,6 @@ fn update() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -533,12 +557,20 @@ mod tests {
 
     #[test]
     fn test_parse_duration_raw_numbers() {
-        assert_eq!(parse_duration("45"), 45, "Números sem sufixo assumem segundos");
+        assert_eq!(
+            parse_duration("45"),
+            45,
+            "Números sem sufixo assumem segundos"
+        );
     }
 
     #[test]
     fn test_parse_duration_invalid_input() {
-        assert_eq!(parse_duration("abc"), 0, "Inputs inválidos devem retornar 0");
+        assert_eq!(
+            parse_duration("abc"),
+            0,
+            "Inputs inválidos devem retornar 0"
+        );
         assert_eq!(parse_duration(""), 0);
     }
 }

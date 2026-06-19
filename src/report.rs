@@ -36,7 +36,7 @@ pub struct FinalReport {
     pub actual_rps: f64,
     pub bytes_sent: u64,
     pub bytes_received: u64,
-    #[tabled(skip)] 
+    #[tabled(skip)]
     pub status_codes: HashMap<u16, u64>,
     #[tabled(skip)]
     pub errors: HashMap<String, u64>,
@@ -98,7 +98,6 @@ pub fn render_ascii_histogram(hist: &hdrhistogram::Histogram<u64>) {
     }
 }
 pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()> {
- 
     let template = include_str!("../templates/dashboard.html");
     let final_html = template.replace("/*JSON_PAYLOAD*/", report_json);
     std::fs::write(path, final_html)?;

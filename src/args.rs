@@ -2,7 +2,11 @@ use clap::Parser;
 use serde::Deserialize;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Cannon - Uma ferramenta de teste de carga em Rust")]
+#[command(
+    author,
+    version,
+    about = "Cannon - Uma ferramenta de teste de carga em Rust"
+)]
 pub struct Args {
     #[arg(short, long)]
     pub url: Option<String>,
@@ -56,7 +60,7 @@ pub struct Args {
     pub apdex_t: u64,
 
     #[arg(long)]
-    pub csv: Option<String>
+    pub csv: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -84,7 +88,7 @@ mod tests {
     fn test_valid_basic_arguments() {
         // Simula: cannon -u http://localhost -c 100
         let args = Args::try_parse_from(["cannon", "-u", "http://localhost", "-c", "100"]).unwrap();
-        
+
         assert_eq!(args.url.unwrap(), "http://localhost");
         assert_eq!(args.count, 100);
         assert_eq!(args.workers, 10, "O default de workers deve ser 10");
@@ -104,11 +108,15 @@ mod tests {
     fn test_custom_headers_parsing() {
         // Simula: cannon -u http://localhost -H "Auth: Bearer 123" -H "Accept: application/json"
         let args = Args::try_parse_from([
-            "cannon", 
-            "-u", "http://localhost", 
-            "-H", "Auth: Bearer 123", 
-            "-H", "Accept: application/json"
-        ]).unwrap();
+            "cannon",
+            "-u",
+            "http://localhost",
+            "-H",
+            "Auth: Bearer 123",
+            "-H",
+            "Accept: application/json",
+        ])
+        .unwrap();
 
         assert_eq!(args.headers.len(), 2);
         assert_eq!(args.headers[0], "Auth: Bearer 123");
@@ -117,6 +125,9 @@ mod tests {
     #[test]
     fn test_apdex_tolerance_default() {
         let args = Args::try_parse_from(["cannon", "-u", "http://localhost"]).unwrap();
-        assert_eq!(args.apdex_t, 50, "O tempo tolerável do Apdex deve ser 50ms por padrão");
+        assert_eq!(
+            args.apdex_t, 50,
+            "O tempo tolerável do Apdex deve ser 50ms por padrão"
+        );
     }
 }
