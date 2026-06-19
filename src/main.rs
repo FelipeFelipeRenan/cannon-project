@@ -60,6 +60,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(csv_path) = conf.csv {
             args.csv = Some(csv_path)
         }
+        if let Some(h2) = conf.http2 {
+            args.http2 = h2;
+        }
 
         // Concatena headers do YAML com os headers passados na CLI (se houver)
         if let Some(mut yaml_headers) = conf.headers {
@@ -100,6 +103,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if args.insecure {
         client_builder = client_builder.danger_accept_invalid_certs(true);
+    }
+
+    if args.http2{
+        client_builder = client_builder.http2_prior_knowledge();
     }
 
     let client = Arc::new(client_builder.build()?);

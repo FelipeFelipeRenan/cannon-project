@@ -61,6 +61,9 @@ pub struct Args {
 
     #[arg(long)]
     pub csv: Option<String>,
+
+    #[arg(long, help = "Força o uso de HTTP/2 Prior Knowledge (útil para localhost/h2c)")]
+    pub http2: bool,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -77,6 +80,7 @@ pub struct FileConfig {
     pub apdex_t: Option<u64>,
     pub insecure: Option<bool>,
     pub csv: Option<String>,
+    pub http2: Option<bool>,
 }
 
 #[cfg(test)]
