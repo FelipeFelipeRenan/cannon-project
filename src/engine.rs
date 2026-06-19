@@ -14,6 +14,7 @@ pub struct RequestResult {
     pub assertion_success: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_workers(
     count: u32,
     workers: u32,
@@ -66,7 +67,7 @@ pub async fn run_workers(
                 let res = match req.send().await {
                     Ok(resp) => {
                         let status = resp.status().as_u16();
-                        let is_http_success = status >= 200 && status < 300;
+                        let is_http_success = (200..300).contains(&status);
 
                         let (error_msg, bytes_recv, assertion_success) = match resp.bytes().await {
                             Ok(bytes) => {

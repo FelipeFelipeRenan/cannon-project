@@ -145,8 +145,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Inicia o motor em background
     tokio::spawn(engine::run_workers(
-        args.count as u32,
-        args.workers as u32,
+        args.count,
+        args.workers,
         url.clone(),
         reqwest::Method::from_bytes(args.method.as_bytes()).unwrap(),
         body_arc,
@@ -154,7 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         client,
         expect_arc,
         tx,
-        args.rps.map(|r| r as u32),
+        args.rps,
     ));
 
     // Configura UI e Métricas
