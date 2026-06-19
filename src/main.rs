@@ -18,11 +18,10 @@ use tokio::sync::mpsc;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = Args::parse();
 
-        if args.update {
+    if args.update {
         update()?;
         return Ok(());
     }
-
 
     // Se o utilizador passou um ficheiro YAML, lemos e fazemos o merge
     if let Some(config_path) = &args.config {
