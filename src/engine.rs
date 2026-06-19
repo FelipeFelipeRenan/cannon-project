@@ -32,7 +32,7 @@ pub async fn run_workers(
 
     // 2. Criar o Pool Fixo de Workers
     let mut handles = Vec::new();
-    
+
     for _ in 0..workers {
         let url = url.clone();
         let method = method.clone();
@@ -46,7 +46,7 @@ pub async fn run_workers(
         let handle = tokio::spawn(async move {
             // O worker fica vivo num loop enquanto houver trabalho na fila
             while rx.recv().await.is_ok() {
-let start = Instant::now();
+                let start = Instant::now();
                 let mut req = client.request(method.clone(), url.as_ref());
 
                 // 1. Calcula o tamanho do payload aqui de forma barata
@@ -62,17 +62,17 @@ let start = Instant::now();
                         req = req.header(k.trim(), v.trim());
                     }
                 }
-                
+
                 let res = match req.send().await {
                     Ok(resp) => {
                         let status = resp.status().as_u16();
                         let is_http_success = status >= 200 && status < 300;
-                        
+
                         let (error_msg, bytes_recv, assertion_success) = match resp.bytes().await {
                             Ok(bytes) => {
                                 let mut err = None;
                                 let mut assert_ok = true;
-                                
+
                                 if let Some(expected) = &expected_body {
                                     if let Ok(text) = String::from_utf8(bytes.to_vec()) {
                                         if !text.contains(expected.as_ref()) {
@@ -115,7 +115,7 @@ let start = Instant::now();
 
     // 3. O Metrônomo (Producer) agora só distribui "sinais" de permissão para atirar
     let interval = rps.map(|r| std::time::Duration::from_secs_f64(1.0 / r as f64));
-    
+
     for _ in 0..count {
         if let Some(i) = interval {
             tokio::time::sleep(i).await;
@@ -125,7 +125,7 @@ let start = Instant::now();
 
     // Fecha a fábrica (os workers saem do loop e morrem limpos)
     drop(job_tx);
-    
+
     // Espera os últimos disparos terminarem
     for handle in handles {
         let _ = handle.await;

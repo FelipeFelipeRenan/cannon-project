@@ -479,7 +479,6 @@ fn print_summary(
     println!("Teste finalizado em {}s", total.as_secs());
 }
 
-
 fn print_banner() {
     let banner = r#"
       _____          _   _ _   _  ____  _   _ 
@@ -551,7 +550,11 @@ mod tests {
         }
 
         // Validate if the percentile math (that Cannon exports) is accurate
-        assert_eq!(hist.value_at_quantile(0.50), 50, "The median (p50) should be 50");
+        assert_eq!(
+            hist.value_at_quantile(0.50),
+            50,
+            "The median (p50) should be 50"
+        );
         assert_eq!(hist.value_at_quantile(0.95), 95, "The p95 should be 95");
         assert_eq!(hist.value_at_quantile(0.99), 99, "The p99 should be 99");
         assert_eq!(hist.max(), 100, "The maximum latency should be 100");
@@ -561,24 +564,33 @@ mod tests {
     #[test]
     fn test_apdex_calculation_logic() {
         let mut hist = Histogram::<u64>::new(3).unwrap();
-        
-        // Simulate requests: 
+
+        // Simulate requests:
         // 60 satisfied requests (<= 50ms)
         // 30 tolerating requests (<= 200ms)
         // 10 frustrated requests (> 200ms)
-        for _ in 0..60 { hist.record(40).unwrap(); }
-        for _ in 0..30 { hist.record(150).unwrap(); }
-        for _ in 0..10 { hist.record(300).unwrap(); }
+        for _ in 0..60 {
+            hist.record(40).unwrap();
+        }
+        for _ in 0..30 {
+            hist.record(150).unwrap();
+        }
+        for _ in 0..10 {
+            hist.record(300).unwrap();
+        }
 
         let apdex_t = 50;
         let satisfied = hist.count_between(0, apdex_t);
         let tolerating = hist.count_between(apdex_t + 1, apdex_t * 4);
-        
+
         // Apdex Formula: (Satisfied + (Tolerating / 2)) / Total
         let apdex_score = (satisfied as f64 + (tolerating as f64 / 2.0)) / 100.0;
 
         assert_eq!(satisfied, 60);
         assert_eq!(tolerating, 30);
-        assert_eq!(apdex_score, 0.75, "The calculated Apdex Score should be 0.75");
+        assert_eq!(
+            apdex_score, 0.75,
+            "The calculated Apdex Score should be 0.75"
+        );
     }
 }
