@@ -62,8 +62,18 @@ pub struct Args {
     #[arg(long)]
     pub csv: Option<String>,
 
-    #[arg(long, help = "Força o uso de HTTP/2 Prior Knowledge (útil para localhost/h2c)")]
+    #[arg(
+        long,
+        help = "Força o uso de HTTP/2 Prior Knowledge (útil para localhost/h2c)"
+    )]
     pub http2: bool,
+
+    #[arg(
+        long,
+        default_value_t = 5000,
+        help = "Timeout apenas para estabelecer a conexão TCP (ms)"
+    )]
+    pub connect_timeout: u64,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -81,6 +91,7 @@ pub struct FileConfig {
     pub insecure: Option<bool>,
     pub csv: Option<String>,
     pub http2: Option<bool>,
+    pub connect_timeout: Option<u64>,
 }
 
 #[cfg(test)]

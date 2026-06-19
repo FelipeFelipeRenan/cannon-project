@@ -63,7 +63,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(h2) = conf.http2 {
             args.http2 = h2;
         }
-
+        if let Some(ct) = conf.connect_timeout {
+            args.connect_timeout = ct;
+        }
         // Concatena headers do YAML com os headers passados na CLI (se houver)
         if let Some(mut yaml_headers) = conf.headers {
             yaml_headers.append(&mut args.headers);
@@ -99,13 +101,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .pool_max_idle_per_host(args.workers as usize)
         .pool_idle_timeout(Some(std::time::Duration::from_secs(90)))
         .user_agent(&args.user_agent)
+        .timeout(std::time::Duration::from_millis(args.timeout))
+        .connect_timeout(std::time::Duration::from_millis(args.connect_timeout))
         .timeout(std::time::Duration::from_millis(args.timeout));
 
     if args.insecure {
         client_builder = client_builder.danger_accept_invalid_certs(true);
     }
 
-    if args.http2{
+    if args.http2 {
         client_builder = client_builder.http2_prior_knowledge();
     }
 
