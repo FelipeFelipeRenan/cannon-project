@@ -4,16 +4,6 @@ use colored::Colorize;
 use serde::Serialize;
 use tabled::Tabled;
 
-pub struct ShotResult {
-    pub success: bool,
-    pub duration: std::time::Duration,
-    pub status_code: Option<u16>,
-    pub error: Option<String>,
-    pub assertion_success: bool,
-    pub bytes_sent: u64,
-    pub bytes_received: u64,
-}
-
 #[derive(Serialize, Tabled)]
 pub struct FinalReport {
     #[tabled(rename = "Target URL")]

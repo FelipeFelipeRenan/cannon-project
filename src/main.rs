@@ -140,24 +140,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let start_test = Instant::now();
 
-    let ramp_up_secs = args
-        .ramp_up
-        .as_ref()
-        .map(|s| parse_duration(s))
-        .unwrap_or(0);
+    let body_arc = args.body.clone().map(Arc::new);
+    let expect_arc = args.expect.clone().map(Arc::new);
+
     // Inicia o motor em background
-    tokio::spawn(engine::run_producer(
-        args.count,
-        args.workers,
-        Arc::clone(&url),
-        client,
-        tx,
-        args.rps,
-        args.body.clone(),
-        args.method.clone(),
+    tokio::spawn(engine::run_workers(
+        args.count as u32,
+        args.workers as u32,
+        url.clone(),
+        reqwest::Method::from_bytes(args.method.as_bytes()).unwrap(),
+        body_arc,
         headers,
-        args.expect.clone(),
-        ramp_up_secs,
+        client,
+        expect_arc,
+        tx,
+        args.rps.map(|r| r as u32),
     ));
 
     // Configura UI e Métricas
@@ -482,17 +479,6 @@ fn print_summary(
     println!("Teste finalizado em {}s", total.as_secs());
 }
 
-fn parse_duration(s: &str) -> u64 {
-    let s = s.to_lowercase();
-
-    if s.ends_with('s') {
-        s.trim_end_matches('s').parse().unwrap_or(0)
-    } else if s.ends_with('m') {
-        s.trim_end_matches('m').parse::<u64>().unwrap_or(0) * 60
-    } else {
-        s.parse().unwrap_or(0)
-    }
-}
 
 fn print_banner() {
     let banner = r#"
@@ -552,36 +538,47 @@ fn update() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use hdrhistogram::Histogram;
 
     #[test]
-    fn test_parse_duration_seconds() {
-        assert_eq!(parse_duration("15s"), 15);
-        assert_eq!(parse_duration("1S"), 1, "Deve ser case-insensitive");
+    fn test_histogram_percentile_math() {
+        // Initialize the histogram exactly as we do in the engine
+        let mut hist = Histogram::<u64>::new(3).expect("Failed to create histogram");
+
+        // Simulate 100 requests with latencies from 1ms to 100ms
+        for i in 1..=100 {
+            hist.record(i).unwrap();
+        }
+
+        // Validate if the percentile math (that Cannon exports) is accurate
+        assert_eq!(hist.value_at_quantile(0.50), 50, "The median (p50) should be 50");
+        assert_eq!(hist.value_at_quantile(0.95), 95, "The p95 should be 95");
+        assert_eq!(hist.value_at_quantile(0.99), 99, "The p99 should be 99");
+        assert_eq!(hist.max(), 100, "The maximum latency should be 100");
+        assert_eq!(hist.min(), 1, "The minimum latency should be 1");
     }
 
     #[test]
-    fn test_parse_duration_minutes() {
-        assert_eq!(parse_duration("2m"), 120);
-        assert_eq!(parse_duration("10M"), 600);
-    }
+    fn test_apdex_calculation_logic() {
+        let mut hist = Histogram::<u64>::new(3).unwrap();
+        
+        // Simulate requests: 
+        // 60 satisfied requests (<= 50ms)
+        // 30 tolerating requests (<= 200ms)
+        // 10 frustrated requests (> 200ms)
+        for _ in 0..60 { hist.record(40).unwrap(); }
+        for _ in 0..30 { hist.record(150).unwrap(); }
+        for _ in 0..10 { hist.record(300).unwrap(); }
 
-    #[test]
-    fn test_parse_duration_raw_numbers() {
-        assert_eq!(
-            parse_duration("45"),
-            45,
-            "Números sem sufixo assumem segundos"
-        );
-    }
+        let apdex_t = 50;
+        let satisfied = hist.count_between(0, apdex_t);
+        let tolerating = hist.count_between(apdex_t + 1, apdex_t * 4);
+        
+        // Apdex Formula: (Satisfied + (Tolerating / 2)) / Total
+        let apdex_score = (satisfied as f64 + (tolerating as f64 / 2.0)) / 100.0;
 
-    #[test]
-    fn test_parse_duration_invalid_input() {
-        assert_eq!(
-            parse_duration("abc"),
-            0,
-            "Inputs inválidos devem retornar 0"
-        );
-        assert_eq!(parse_duration(""), 0);
+        assert_eq!(satisfied, 60);
+        assert_eq!(tolerating, 30);
+        assert_eq!(apdex_score, 0.75, "The calculated Apdex Score should be 0.75");
     }
 }

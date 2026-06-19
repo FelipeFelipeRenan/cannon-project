@@ -1,162 +1,133 @@
-use crate::payload;
-use crate::report::ShotResult;
-use reqwest::{
-    header::{HeaderMap, HeaderName, HeaderValue},
-    Method,
-};
-use std::str::FromStr;
+use crate::payload::process_payload;
+use reqwest::Client;
 use std::sync::Arc;
-use std::time::Instant;
-use tokio::{
-    sync::{mpsc, Semaphore},
-    time::Duration,
-};
+use tokio::sync::mpsc;
+use tokio::time::Instant;
 
-#[allow(clippy::too_many_arguments)]
-pub async fn run_producer(
+pub struct RequestResult {
+    pub duration: std::time::Duration,
+    pub status_code: Option<u16>,
+    pub error: Option<String>,
+    pub bytes_sent: u64,
+    pub bytes_received: u64,
+    pub success: bool,
+    pub assertion_success: bool,
+}
+
+pub async fn run_workers(
     count: u32,
     workers: u32,
     url: Arc<String>,
-    client: Arc<reqwest::Client>,
-    tx: mpsc::Sender<ShotResult>,
-    rps: Option<u32>,
-    body: Option<String>,
-    method_str: String,
+    method: reqwest::Method,
+    body: Option<Arc<String>>,
     headers: Arc<Vec<String>>,
-    expect: Option<String>,
-    ramp_up_secs: u64,
+    client: Arc<Client>,
+    expected_body: Option<Arc<String>>,
+    tx: mpsc::Sender<RequestResult>,
+    rps: Option<u32>,
 ) {
-    let semaphore = Arc::new(Semaphore::new(workers as usize));
-    let method = Method::from_bytes(method_str.to_uppercase().as_bytes()).unwrap_or(Method::GET);
+    // 1. Canal interno para distribuir as "balas" para os workers
+    // Tamanho do canal é o número de workers para haver backpressure perfeito
+    let (job_tx, async_job_rx) = async_channel::bounded::<()>(workers as usize);
 
-    // Compilação de Headers (Zero-cost por requisição)
-    let mut header_map = HeaderMap::new();
-    let mut has_content_type = false;
-    for h in headers.iter() {
-        let parts: Vec<&str> = h.splitn(2, ':').collect();
-        if parts.len() == 2 {
-            let key = parts[0].trim();
-            let val = parts[1].trim();
-            if key.eq_ignore_ascii_case("content-type") {
-                has_content_type = true;
-            }
-            if let (Ok(k), Ok(v)) = (HeaderName::from_str(key), HeaderValue::from_str(val)) {
-                header_map.insert(k, v);
-            }
-        }
-    }
+    // 2. Criar o Pool Fixo de Workers
+    let mut handles = Vec::new();
+    
+    for _ in 0..workers {
+        let url = url.clone();
+        let method = method.clone();
+        let body = body.clone();
+        let headers = headers.clone();
+        let client = client.clone();
+        let expected_body = expected_body.clone();
+        let tx = tx.clone();
+        let rx = async_job_rx.clone();
 
-    if body.is_some() && !has_content_type {
-        header_map.insert("content-type", HeaderValue::from_static("application/json"));
-    }
+        let handle = tokio::spawn(async move {
+            // O worker fica vivo num loop enquanto houver trabalho na fila
+            while rx.recv().await.is_ok() {
+let start = Instant::now();
+                let mut req = client.request(method.clone(), url.as_ref());
 
-    let start_engine = Instant::now();
-    let target_rps = rps.unwrap_or(0) as f64;
-    let body_arc = body.map(Arc::new);
-    let expect_arc = expect.map(Arc::new);
-    let mut next_shot_time = tokio::time::Instant::now();
+                // 1. Calcula o tamanho do payload aqui de forma barata
+                let mut bytes_sent = 0;
+                if let Some(b) = &body {
+                    let processed = process_payload(b);
+                    bytes_sent = processed.len() as u64;
+                    req = req.body(processed);
+                }
 
-    for _ in 0..count {
-        // Lógica única e centralizada de Ramp-up e RPS Constante
-        if target_rps > 0.0 {
-            let elapsed = start_engine.elapsed().as_secs_f64();
-            let current_rps = if ramp_up_secs > 0 && elapsed < ramp_up_secs as f64 {
-                let progress = elapsed / ramp_up_secs as f64;
-                1.0 + (target_rps - 1.0) * progress
-            } else {
-                target_rps
-            };
-
-            let delay = Duration::from_secs_f64(1.0 / current_rps);
-            next_shot_time += delay;
-            tokio::time::sleep_until(next_shot_time).await;
-        }
-
-        // Adquire permissão de forma segura
-        let permit = match Arc::clone(&semaphore).acquire_owned().await {
-            Ok(p) => p,
-            Err(_) => break, // Se o semáforo fechar, encerra graciosamente
-        };
-
-        let client_clone = Arc::clone(&client);
-        let url_clone = Arc::clone(&url);
-        let tx_clone = tx.clone();
-        let body_clone = body_arc.as_ref().map(Arc::clone);
-        let method_clone = method.clone();
-        let expect_clone = expect_arc.as_ref().map(Arc::clone);
-        let header_map_clone = header_map.clone();
-
-        tokio::spawn(async move {
-            let _permit = permit; // A concorrência é garantida aqui
-            let start_request = Instant::now();
-
-            let mut request_builder = client_clone
-                .request(method_clone, url_clone.as_str())
-                .headers(header_map_clone);
-
-            let mut bytes_sent = 0;
-
-            if let Some(b) = body_clone {
-                let dynamic_body = payload::process_payload(&b);
-                bytes_sent = dynamic_body.len() as u64;
-                request_builder = request_builder.body(dynamic_body);
-            }
-
-            let response = request_builder.send().await;
-
-            let (success, status_code, error, assertion_success, bytes_received) = match response {
-                Ok(res) => {
-                    let s = res.status();
-                    let code = s.as_u16();
-                    let mut is_success = s.is_success();
-                    let mut err_msg = None;
-                    let mut assert_ok = true;
-
-                    let rx_bytes = match res.bytes().await {
-                        Ok(b) => {
-                            if is_success {
-                                if let Some(expected) = expect_clone {
-                                    let text = String::from_utf8_lossy(&b);
-                                    if !text.contains(expected.as_str()) {
-                                        is_success = false;
-                                        assert_ok = false;
-                                        err_msg = Some("Assertion Failed".to_string());
+                for h in headers.iter() {
+                    if let Some((k, v)) = h.split_once(':') {
+                        req = req.header(k.trim(), v.trim());
+                    }
+                }
+                
+                let res = match req.send().await {
+                    Ok(resp) => {
+                        let status = resp.status().as_u16();
+                        let is_http_success = status >= 200 && status < 300;
+                        
+                        let (error_msg, bytes_recv, assertion_success) = match resp.bytes().await {
+                            Ok(bytes) => {
+                                let mut err = None;
+                                let mut assert_ok = true;
+                                
+                                if let Some(expected) = &expected_body {
+                                    if let Ok(text) = String::from_utf8(bytes.to_vec()) {
+                                        if !text.contains(expected.as_ref()) {
+                                            err = Some(format!("Mismatch: missing '{}'", expected));
+                                            assert_ok = false;
+                                        }
                                     }
                                 }
+                                (err, bytes.len() as u64, assert_ok)
                             }
-                            b.len() as u64
-                        }
-                        Err(_) => {
-                            is_success = false;
-                            err_msg = Some("Body Read Error".to_string());
-                            0
-                        }
-                    };
-                    (is_success, Some(code), err_msg, assert_ok, rx_bytes)
-                }
-                Err(e) => {
-                    let msg = if e.is_timeout() {
-                        "Timeout".to_string()
-                    } else if e.is_connect() {
-                        "Connection Error".to_string()
-                    } else {
-                        "Network Error".to_string()
-                    };
-                    (false, None, Some(msg), true, 0)
-                }
-            };
+                            Err(e) => (Some(format!("Read Error: {}", e)), 0, false),
+                        };
 
-            let _ = tx_clone
-                .send(ShotResult {
-                    success,
-                    duration: start_request.elapsed(),
-                    status_code,
-                    error,
-                    assertion_success,
-                    bytes_sent,
-                    bytes_received,
-                })
-                .await;
+                        RequestResult {
+                            duration: start.elapsed(),
+                            status_code: Some(status),
+                            error: error_msg,
+                            bytes_sent,
+                            bytes_received: bytes_recv,
+                            success: is_http_success && assertion_success,
+                            assertion_success,
+                        }
+                    }
+                    Err(e) => RequestResult {
+                        duration: start.elapsed(),
+                        status_code: e.status().map(|s| s.as_u16()),
+                        error: Some(format!("Network Error: {}", e)),
+                        bytes_sent,
+                        bytes_received: 0,
+                        success: false,
+                        assertion_success: false,
+                    },
+                };
+
+                let _ = tx.send(res).await;
+            }
         });
+        handles.push(handle);
+    }
+
+    // 3. O Metrônomo (Producer) agora só distribui "sinais" de permissão para atirar
+    let interval = rps.map(|r| std::time::Duration::from_secs_f64(1.0 / r as f64));
+    
+    for _ in 0..count {
+        if let Some(i) = interval {
+            tokio::time::sleep(i).await;
+        }
+        let _ = job_tx.send(()).await;
+    }
+
+    // Fecha a fábrica (os workers saem do loop e morrem limpos)
+    drop(job_tx);
+    
+    // Espera os últimos disparos terminarem
+    for handle in handles {
+        let _ = handle.await;
     }
 }

@@ -28,6 +28,8 @@ colored = "3.1.1"
 tabled = { version = "0.20.0", features = ["derive"] }
 
 
+async-channel = "2.3"
+
 rand = "0.10.0"
 
 uuid = { version = "1.21.0", features = ["v4"] }
