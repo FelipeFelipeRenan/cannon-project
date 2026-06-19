@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Regra de Ouro: O YAML sobrepõe os valores padrão da CLI
         if conf.url.is_some() { args.url = conf.url; }
         if let Some(w) = conf.workers { args.workers = w; }
-        if let Some(c) = conf.count { args.count = c; } // Aqui estava o bug! Agora o 5000 vai entrar.
+        if let Some(c) = conf.count { args.count = c; }
         if let Some(rps) = conf.rps { args.rps = Some(rps); }
         if let Some(t) = conf.timeout { args.timeout = t; }
         if let Some(m) = conf.method { args.method = m; }
@@ -37,6 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(exp) = conf.expect { args.expect = Some(exp); }
         if let Some(apdex) = conf.apdex_t { args.apdex_t = apdex; }
         if let Some(ins) = conf.insecure { args.insecure = ins; }
+        if let Some(csv_path) = conf.csv{args.csv = Some(csv_path)} 
         
         // Concatena headers do YAML com os headers passados na CLI (se houver)
         if let Some(mut yaml_headers) = conf.headers {
@@ -86,7 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let url = Arc::new(url_str);
     let headers = Arc::new(args.headers.clone());
 
-    let buffer_size = std::cmp::min(10_000, (args.workers * 2) as usize).max(1);
+    let buffer_size = std::cmp::min( args.workers as usize, 100_00).max(1);
 
     // change to a fix size like 10_000
     let (tx, mut rx) = mpsc::channel(buffer_size);
@@ -154,11 +155,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Pressione Ctrl+C para interromper e ver o relatório parcial".bright_black()
     );
 
+    // Prepara o escritor CSV se o argumento for passado
+    let mut csv_writer = match &args.csv {
+        Some(path) => {
+            let mut w = csv::Writer::from_path(path).expect("❌ Erro ao criar arquivo CSV");
+            w.write_record(&["tempo_relativo_ms", "status", "latencia_ms", "erro"]).unwrap();
+            Some(w)
+        }
+        None => None,
+    };
+
     loop {
         tokio::select! {
                 result = rx.recv() => {
                     match result {
                         Some(res) => {
+                            if let Some(w) = &mut csv_writer {
+                            let ts = start_test.elapsed().as_millis().to_string();
+                            let status = res.status_code.map(|c| c.to_string()).unwrap_or_else(|| "N/A".to_string());
+                            let lat = res.duration.as_millis().to_string();
+                            let err = res.error.clone().unwrap_or_default();
+                            let _ = w.write_record(&[ts, status, lat, err]);
+                        }
                             pb.inc(1);
 
                             total_bytes_sent += res.bytes_sent;
@@ -204,6 +222,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     pb.finish_with_message("Concluído");
 
+    if let Some(mut w) = csv_writer {
+        let _ = w.flush();
+        println!("📊 Dados brutos exportados para {}!", args.csv.as_ref().unwrap().bright_cyan());
+    }
+    
     let status_for_report = status_counts.clone();
     let errors_for_report = error_counts.clone();
     let total_secs = start_test.elapsed().as_secs_f64();

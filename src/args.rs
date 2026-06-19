@@ -54,6 +54,9 @@ pub struct Args {
 
     #[arg(long, default_value_t = 50)]
     pub apdex_t: u64,
+
+    #[arg(long)]
+    pub csv: Option<String>
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -69,6 +72,7 @@ pub struct FileConfig {
     pub expect: Option<String>,
     pub apdex_t: Option<u64>,
     pub insecure: Option<bool>,
+    pub csv: Option<String>,
 }
 
 #[cfg(test)]
