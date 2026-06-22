@@ -447,8 +447,7 @@ fn print_summary(
 
         // Converte para vetor e ordena (maior quantidade de erros no topo)
         let mut sorted_errors: Vec<_> = error_counts.into_iter().collect();
-        sorted_errors.sort_by(|a, b| b.1.cmp(&a.1));
-
+        sorted_errors.sort_by_key(|item| std::cmp::Reverse(item.1));
         for (err, count) in sorted_errors {
             // Calcula a porcentagem em relação ao total de falhas
             let perc = (count as f64 / failures as f64) * 100.0;
