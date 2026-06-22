@@ -360,14 +360,14 @@ fn print_summary(
     println!("Falhas:       {}", failures);
 
     let mut metrics = Vec::new();
-  if successes > 0 {
+    if successes > 0 {
         let to_ms_str = |v| format!("{:.2}ms", to_ms(v));
-        
+
         metrics.push(LatencyMetrics {
             metric: "Mínimo".to_string(),
             value: to_ms_str(hist.min()),
         });
-        
+
         metrics.push(LatencyMetrics {
             metric: "Média".to_string(),
             value: to_ms_str(hist.mean() as u64),
@@ -376,7 +376,7 @@ fn print_summary(
         // O MOTOR DINÂMICO DE PERCENTIS
         for &p in percentiles {
             let p_val = p * 100.0;
-            
+
             // Se for cravado (ex: 50.0), imprime "p50". Se for fracionado (ex: 99.9), imprime "p99.9"
             let p_label = if p_val.fract() == 0.0 {
                 if p_val == 50.0 {
