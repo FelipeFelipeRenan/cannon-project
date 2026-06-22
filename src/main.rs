@@ -194,6 +194,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => None,
     };
 
+
     loop {
         tokio::select! {
                 result = rx.recv() => {
@@ -423,8 +424,20 @@ fn print_summary(
 
     if !error_counts.is_empty() {
         println!("\n{}", "❌ DETALHAMENTO DE FALHAS".bold().red());
-        for (err, count) in error_counts {
-            println!("  {}: {}", err.yellow(), count);
+
+        // Converte para vetor e ordena (maior quantidade de erros no topo)
+        let mut sorted_errors: Vec<_> = error_counts.into_iter().collect();
+        sorted_errors.sort_by(|a, b| b.1.cmp(&a.1));
+
+        for (err, count) in sorted_errors {
+            // Calcula a porcentagem em relação ao total de falhas
+            let perc = (count as f64 / failures as f64) * 100.0;
+            println!(
+                "  {:<30} {:>6} ({:>4.1}%)",
+                err.yellow(),
+                count.to_string().bright_white(),
+                perc
+            );
         }
     }
 

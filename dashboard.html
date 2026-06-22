@@ -61,25 +61,25 @@
     <script>
         const data = {
   "target": "http://localhost:8081/api/v1/accounts",
-  "total_requests": 1000,
-  "concurrency": 60,
-  "successes": 1000,
+  "total_requests": 30000,
+  "concurrency": 100,
+  "successes": 30000,
   "failures": 0,
-  "min_ms": 21.056,
-  "avg_ms": 458.856,
-  "p50_ms": 451.327,
-  "p95_ms": 770.047,
-  "p99_ms": 937.471,
-  "max_ms": 1063.935,
-  "actual_rps": 127.12644687363716,
+  "min_ms": 1.667,
+  "avg_ms": 88.554,
+  "p50_ms": 25.567,
+  "p95_ms": 347.135,
+  "p99_ms": 502.527,
+  "max_ms": 1211.391,
+  "actual_rps": 499.9739441912144,
   "bytes_sent": 0,
-  "bytes_received": 13748000,
+  "bytes_received": 412440000,
   "status_codes": {
-    "200": 1000
+    "200": 30000
   },
   "errors": {},
-  "duration_secs": 7.866183824,
-  "apdex_score": 0.0185
+  "duration_secs": 60.00312686,
+  "apdex_score": 0.7149
 };
         const mbSent = data.bytes_sent / 1048576;
         const mbRecv = data.bytes_received / 1048576;
