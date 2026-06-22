@@ -1,22 +1,22 @@
 {
   "target": "http://localhost:8081/api/v1/accounts",
   "total_requests": 50000,
-  "concurrency": 20,
+  "concurrency": 40,
   "successes": 50000,
   "failures": 0,
-  "min_ms": 0.833,
-  "avg_ms": 14.738,
-  "p50_ms": 3.541,
-  "p95_ms": 12.135,
-  "p99_ms": 21.663,
-  "max_ms": 3962.879,
-  "actual_rps": 1355.5583494402372,
+  "min_ms": 0.808,
+  "avg_ms": 30.238,
+  "p50_ms": 3.845,
+  "p95_ms": 11.247,
+  "p99_ms": 17.455,
+  "max_ms": 3753.983,
+  "actual_rps": 1322.0869277970621,
   "bytes_sent": 0,
   "bytes_received": 31100000,
   "status_codes": {
     "200": 50000
   },
   "errors": {},
-  "duration_secs": 36.885169879,
-  "apdex_score": 0.9962
+  "duration_secs": 37.818995823,
+  "apdex_score": 0.9916
 }

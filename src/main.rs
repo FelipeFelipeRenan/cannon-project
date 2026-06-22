@@ -96,6 +96,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    let parsed_percentiles: Vec<f64> = args
+        .percentiles
+        .split(',')
+        .filter_map(|s| s.trim().parse::<f64>().ok())
+        .map(|p| p / 100.0)
+        .collect();
+
     let mut client_builder = reqwest::Client::builder()
         .tcp_nodelay(true)
         .pool_max_idle_per_host(args.workers as usize)
@@ -286,6 +293,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         assertion_failures,
         total_bytes_sent,
         total_bytes_received,
+        &parsed_percentiles,
     );
 
     // Exportação de Dados (JSON / HTML)
@@ -345,34 +353,47 @@ fn print_summary(
     assertion_failures: u64,
     bytes_sent: u64,
     bytes_recv: u64,
+    percentiles: &[f64],
 ) {
     println!("\n{}", "--- 🏁 RELATÓRIO DO CANNON ---".bold().underline());
     println!("Sucessos:     {}", successes);
     println!("Falhas:       {}", failures);
 
     let mut metrics = Vec::new();
-    if successes > 0 {
+  if successes > 0 {
         let to_ms_str = |v| format!("{:.2}ms", to_ms(v));
+        
         metrics.push(LatencyMetrics {
             metric: "Mínimo".to_string(),
             value: to_ms_str(hist.min()),
         });
+        
         metrics.push(LatencyMetrics {
             metric: "Média".to_string(),
             value: to_ms_str(hist.mean() as u64),
         });
-        metrics.push(LatencyMetrics {
-            metric: "p50 (Mediana)".to_string(),
-            value: to_ms_str(hist.value_at_quantile(0.5)),
-        });
-        metrics.push(LatencyMetrics {
-            metric: "p95".to_string(),
-            value: to_ms_str(hist.value_at_quantile(0.95)),
-        });
-        metrics.push(LatencyMetrics {
-            metric: "p99".to_string(),
-            value: to_ms_str(hist.value_at_quantile(0.99)),
-        });
+
+        // O MOTOR DINÂMICO DE PERCENTIS
+        for &p in percentiles {
+            let p_val = p * 100.0;
+            
+            // Se for cravado (ex: 50.0), imprime "p50". Se for fracionado (ex: 99.9), imprime "p99.9"
+            let p_label = if p_val.fract() == 0.0 {
+                if p_val == 50.0 {
+                    "p50 (Mediana)".to_string()
+                } else {
+                    format!("p{:.0}", p_val)
+                }
+            } else {
+                format!("p{}", p_val)
+            };
+
+            metrics.push(LatencyMetrics {
+                metric: p_label,
+                value: to_ms_str(hist.value_at_quantile(p)),
+            });
+        }
+
         metrics.push(LatencyMetrics {
             metric: "Máximo".to_string(),
             value: to_ms_str(hist.max()),
