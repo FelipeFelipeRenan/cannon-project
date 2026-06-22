@@ -114,14 +114,21 @@ pub async fn run_workers(
         handles.push(handle);
     }
 
-    // 3. O Metrônomo (Producer) agora só distribui "sinais" de permissão para atirar
-    let interval = rps.map(|r| std::time::Duration::from_secs_f64(1.0 / r as f64));
+    // 3. O Metrônomo (Producer) agora usa tempo ABSOLUTO para evitar o "Drift"
+    if let Some(r) = rps {
+        let mut interval =
+            tokio::time::interval(std::time::Duration::from_secs_f64(1.0 / r as f64));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Burst);
 
-    for _ in 0..count {
-        if let Some(i) = interval {
-            tokio::time::sleep(i).await;
+        for _ in 0..count {
+            interval.tick().await; // Espera o próximo pulso exato do relógio
+            let _ = job_tx.send(()).await;
         }
-        let _ = job_tx.send(()).await;
+    } else {
+        // Modo "Fogo Livre": dispara o mais rápido possível se não houver limite de RPS
+        for _ in 0..count {
+            let _ = job_tx.send(()).await;
+        }
     }
 
     // Fecha a fábrica (os workers saem do loop e morrem limpos)

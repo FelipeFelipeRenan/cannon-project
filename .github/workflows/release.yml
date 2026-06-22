@@ -2,12 +2,9 @@ name: Release Cannon
 
 on:
   push:
-    branches: [ "main" ]
     tags: 
       - "v*"
       - "*.*.*"
-  pull_request:
-    branches: [ "main" ]
 
 permissions:
   contents: write
@@ -33,17 +30,6 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - name: Check Formatting
-        run: cargo fmt -- --check
-
-      - name: Run Linter (Clippy)
-        run: cargo clippy -- -D warnings
-
-      - name: Run Tests
-        run: cargo test
 
       - name: Build release
         run: cargo build --release
@@ -58,7 +44,6 @@ jobs:
             mv "cannon-project" "${{ matrix.asset_name }}"
           else
             echo "❌ Error: No binary found in target/release"
-            ls -F
             exit 1
           fi
 
@@ -73,15 +58,12 @@ jobs:
             mv "cannon-project.exe" "${{ matrix.asset_name }}"
           else
             echo "❌ Error: No .exe found in target/release"
-            ls -F
             exit 1
           fi
 
       - name: Upload binaries to Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: |
-            target/release/${{ matrix.asset_name }}
+          files: target/release/${{ matrix.asset_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,1001 +1,1001 @@
 tempo_relativo_ms,status,latencia_ms,erro
-5,N/A,2,Network Error
-5,N/A,0,Network Error
-9,N/A,1,Network Error
-10,N/A,0,Network Error
-13,N/A,1,Network Error
-15,N/A,1,Network Error
-15,N/A,0,Network Error
-18,N/A,1,Network Error
-20,N/A,1,Network Error
-23,N/A,1,Network Error
-25,N/A,0,Network Error
-27,N/A,0,Network Error
-28,N/A,0,Network Error
-31,N/A,1,Network Error
-32,N/A,0,Network Error
-39,N/A,5,Network Error
-39,N/A,0,Network Error
-39,N/A,0,Network Error
-40,N/A,0,Network Error
-43,N/A,0,Network Error
-45,N/A,1,Network Error
-48,N/A,1,Network Error
-48,N/A,0,Network Error
-51,N/A,1,Network Error
-52,N/A,1,Network Error
-54,N/A,0,Network Error
-58,N/A,2,Network Error
-59,N/A,2,Network Error
-62,N/A,2,Network Error
-65,N/A,3,Network Error
-70,N/A,5,Network Error
-70,N/A,0,Network Error
-70,N/A,4,Network Error
-70,N/A,1,Network Error
-75,N/A,3,Network Error
-75,N/A,1,Network Error
-79,N/A,4,Network Error
-80,N/A,1,Network Error
-83,N/A,1,Network Error
-83,N/A,3,Network Error
-87,N/A,2,Network Error
-92,N/A,5,Network Error
-92,N/A,3,Network Error
-92,N/A,0,Network Error
-92,N/A,2,Network Error
-95,N/A,1,Network Error
-97,N/A,1,Network Error
-99,N/A,1,Network Error
-101,N/A,1,Network Error
-102,N/A,1,Network Error
-105,N/A,1,Network Error
-107,N/A,1,Network Error
-109,N/A,1,Network Error
-110,N/A,0,Network Error
-114,N/A,2,Network Error
-114,N/A,0,Network Error
-116,N/A,0,Network Error
-118,N/A,1,Network Error
-121,N/A,1,Network Error
-122,N/A,1,Network Error
-124,N/A,0,Network Error
-126,N/A,0,Network Error
-132,N/A,4,Network Error
-132,N/A,1,Network Error
-132,N/A,2,Network Error
-135,N/A,1,Network Error
-136,N/A,1,Network Error
-139,N/A,1,Network Error
-141,N/A,1,Network Error
-142,N/A,0,Network Error
-144,N/A,0,Network Error
-147,N/A,1,Network Error
-149,N/A,1,Network Error
-151,N/A,1,Network Error
-152,N/A,1,Network Error
-155,N/A,1,Network Error
-157,N/A,0,Network Error
-158,N/A,0,Network Error
-161,N/A,1,Network Error
-166,N/A,2,Network Error
-166,N/A,2,Network Error
-166,N/A,1,Network Error
-169,N/A,1,Network Error
-171,N/A,1,Network Error
-174,N/A,1,Network Error
-174,N/A,0,Network Error
-177,N/A,1,Network Error
-180,N/A,1,Network Error
-180,N/A,1,Network Error
-182,N/A,1,Network Error
-185,N/A,1,Network Error
-187,N/A,1,Network Error
-188,N/A,1,Network Error
-191,N/A,0,Network Error
-193,N/A,0,Network Error
-195,N/A,1,Network Error
-198,N/A,0,Network Error
-198,N/A,2,Network Error
-200,N/A,1,Network Error
-203,N/A,1,Network Error
-206,N/A,1,Network Error
-206,N/A,0,Network Error
-209,N/A,0,Network Error
-213,N/A,1,Network Error
-214,N/A,3,Network Error
-214,N/A,0,Network Error
-217,N/A,1,Network Error
-218,N/A,1,Network Error
-221,N/A,1,Network Error
-223,N/A,1,Network Error
-225,N/A,1,Network Error
-229,N/A,2,Network Error
-230,N/A,2,Network Error
-231,N/A,1,Network Error
-232,N/A,1,Network Error
-235,N/A,1,Network Error
-237,N/A,1,Network Error
-238,N/A,1,Network Error
-240,N/A,0,Network Error
-242,N/A,1,Network Error
-244,N/A,1,Network Error
-247,N/A,1,Network Error
-247,N/A,0,Network Error
-251,N/A,1,Network Error
-254,N/A,2,Network Error
-256,N/A,2,Network Error
-257,N/A,1,Network Error
-259,N/A,1,Network Error
-261,N/A,1,Network Error
-264,N/A,1,Network Error
-265,N/A,1,Network Error
-266,N/A,0,Network Error
-270,N/A,1,Network Error
-271,N/A,1,Network Error
-273,N/A,1,Network Error
-274,N/A,0,Network Error
-277,N/A,0,Network Error
-280,N/A,1,Network Error
-281,N/A,2,Network Error
-281,N/A,0,Network Error
-285,N/A,1,Network Error
-286,N/A,1,Network Error
-289,N/A,1,Network Error
-290,N/A,0,Network Error
-292,N/A,0,Network Error
-296,N/A,1,Network Error
-297,N/A,1,Network Error
-298,N/A,1,Network Error
-301,N/A,1,Network Error
-303,N/A,0,Network Error
-303,N/A,1,Network Error
-306,N/A,0,Network Error
-308,N/A,0,Network Error
-310,N/A,0,Network Error
-313,N/A,1,Network Error
-315,N/A,0,Network Error
-317,N/A,1,Network Error
-320,N/A,1,Network Error
-321,N/A,1,Network Error
-322,N/A,1,Network Error
-324,N/A,1,Network Error
-326,N/A,1,Network Error
-329,N/A,1,Network Error
-331,N/A,0,Network Error
-335,N/A,2,Network Error
-335,N/A,0,Network Error
-337,N/A,1,Network Error
-338,N/A,1,Network Error
-340,N/A,0,Network Error
-342,N/A,0,Network Error
-344,N/A,1,Network Error
-348,N/A,2,Network Error
-349,N/A,1,Network Error
-353,N/A,1,Network Error
-353,N/A,3,Network Error
-355,N/A,1,Network Error
-356,N/A,1,Network Error
-358,N/A,0,Network Error
-360,N/A,1,Network Error
-365,N/A,3,Network Error
-366,N/A,1,Network Error
-366,N/A,0,Network Error
-369,N/A,1,Network Error
-371,N/A,1,Network Error
-373,N/A,1,Network Error
-374,N/A,0,Network Error
-377,N/A,0,Network Error
-379,N/A,1,Network Error
-381,N/A,1,Network Error
-382,N/A,0,Network Error
-384,N/A,1,Network Error
-387,N/A,1,Network Error
-389,N/A,1,Network Error
-390,N/A,0,Network Error
-392,N/A,0,Network Error
-394,N/A,1,Network Error
-398,N/A,1,Network Error
-398,N/A,0,Network Error
-401,N/A,1,Network Error
-403,N/A,1,Network Error
-404,N/A,0,Network Error
-406,N/A,0,Network Error
-408,N/A,0,Network Error
-410,N/A,1,Network Error
-414,N/A,2,Network Error
-414,N/A,0,Network Error
-418,N/A,2,Network Error
-418,N/A,1,Network Error
-423,N/A,3,Network Error
-423,N/A,0,Network Error
-423,N/A,2,Network Error
-430,N/A,4,Network Error
-430,N/A,0,Network Error
-430,N/A,2,Network Error
-437,N/A,4,Network Error
-437,N/A,2,Network Error
-440,N/A,4,Network Error
-443,N/A,0,Network Error
-443,N/A,4,Network Error
-443,N/A,3,Network Error
-446,N/A,2,Network Error
-447,N/A,0,Network Error
-451,N/A,3,Network Error
-452,N/A,2,Network Error
-454,N/A,2,Network Error
-457,N/A,3,Network Error
-457,N/A,0,Network Error
-462,N/A,3,Network Error
-464,N/A,2,Network Error
-464,N/A,0,Network Error
-464,N/A,4,Network Error
-469,N/A,3,Network Error
-469,N/A,0,Network Error
-471,N/A,1,Network Error
-479,N/A,6,Network Error
-479,N/A,0,Network Error
-479,N/A,2,Network Error
-479,N/A,5,Network Error
-484,N/A,3,Network Error
-485,N/A,1,Network Error
-486,N/A,3,Network Error
-486,N/A,0,Network Error
-502,N/A,13,Network Error
-502,N/A,1,Network Error
-502,N/A,10,Network Error
-502,N/A,12,Network Error
-503,N/A,1,Network Error
-503,N/A,1,Network Error
-503,N/A,1,Network Error
-503,N/A,0,Network Error
-504,N/A,1,Network Error
-517,N/A,11,Network Error
-517,N/A,1,Network Error
-517,N/A,4,Network Error
-517,N/A,7,Network Error
-517,N/A,2,Network Error
-517,N/A,9,Network Error
-519,N/A,1,Network Error
-519,N/A,0,Network Error
-523,N/A,1,Network Error
-524,N/A,1,Network Error
-526,N/A,1,Network Error
-528,N/A,0,Network Error
-530,N/A,0,Network Error
-533,N/A,1,Network Error
-535,N/A,1,Network Error
-536,N/A,1,Network Error
-539,N/A,1,Network Error
-541,N/A,0,Network Error
-543,N/A,0,Network Error
-546,N/A,1,Network Error
-548,N/A,2,Network Error
-548,N/A,0,Network Error
-552,N/A,1,Network Error
-553,N/A,1,Network Error
-555,N/A,0,Network Error
-557,N/A,0,Network Error
-559,N/A,0,Network Error
-562,N/A,2,Network Error
-562,N/A,0,Network Error
-564,N/A,1,Network Error
-567,N/A,1,Network Error
-568,N/A,1,Network Error
-571,N/A,1,Network Error
-573,N/A,0,Network Error
-574,N/A,0,Network Error
-576,N/A,0,Network Error
-579,N/A,1,Network Error
-581,N/A,1,Network Error
-582,N/A,0,Network Error
-585,N/A,1,Network Error
-586,N/A,1,Network Error
-588,N/A,0,Network Error
-590,N/A,0,Network Error
-592,N/A,0,Network Error
-596,N/A,1,Network Error
-596,N/A,0,Network Error
-599,N/A,0,Network Error
-601,N/A,1,Network Error
-601,N/A,0,Network Error
-606,N/A,2,Network Error
-606,N/A,0,Network Error
-609,N/A,1,Network Error
-612,N/A,1,Network Error
-614,N/A,2,Network Error
-615,N/A,0,Network Error
-617,N/A,1,Network Error
-618,N/A,1,Network Error
-621,N/A,2,Network Error
-621,N/A,0,Network Error
-624,N/A,0,Network Error
-626,N/A,0,Network Error
-629,N/A,1,Network Error
-630,N/A,1,Network Error
-632,N/A,1,Network Error
-635,N/A,1,Network Error
-637,N/A,1,Network Error
-638,N/A,1,Network Error
-640,N/A,0,Network Error
-642,N/A,1,Network Error
-645,N/A,1,Network Error
-647,N/A,1,Network Error
-648,N/A,0,Network Error
-650,N/A,1,Network Error
-653,N/A,1,Network Error
-654,N/A,1,Network Error
-656,N/A,0,Network Error
-658,N/A,0,Network Error
-661,N/A,1,Network Error
-664,N/A,2,Network Error
-664,N/A,0,Network Error
-667,N/A,1,Network Error
-669,N/A,1,Network Error
-670,N/A,0,Network Error
-673,N/A,0,Network Error
-674,N/A,0,Network Error
-676,N/A,0,Network Error
-679,N/A,1,Network Error
-681,N/A,1,Network Error
-683,N/A,1,Network Error
-684,N/A,1,Network Error
-687,N/A,1,Network Error
-689,N/A,1,Network Error
-691,N/A,0,Network Error
-693,N/A,0,Network Error
-695,N/A,1,Network Error
-695,N/A,0,Network Error
-698,N/A,1,Network Error
-701,N/A,1,Network Error
-703,N/A,1,Network Error
-703,N/A,0,Network Error
-706,N/A,0,Network Error
-708,N/A,0,Network Error
-711,N/A,1,Network Error
-713,N/A,1,Network Error
-713,N/A,0,Network Error
-717,N/A,1,Network Error
-719,N/A,1,Network Error
-720,N/A,1,Network Error
-722,N/A,0,Network Error
-724,N/A,0,Network Error
-726,N/A,0,Network Error
-728,N/A,1,Network Error
-731,N/A,0,Network Error
-732,N/A,1,Network Error
-735,N/A,1,Network Error
-737,N/A,1,Network Error
-737,N/A,0,Network Error
-740,N/A,0,Network Error
-742,N/A,1,Network Error
-747,N/A,3,Network Error
-747,N/A,0,Network Error
-747,N/A,0,Network Error
-751,N/A,1,Network Error
-754,N/A,1,Network Error
-754,N/A,0,Network Error
-756,N/A,0,Network Error
-758,N/A,0,Network Error
-764,N/A,4,Network Error
-764,N/A,0,Network Error
-764,N/A,2,Network Error
-771,N/A,5,Network Error
-771,N/A,0,Network Error
-773,N/A,1,Network Error
-773,N/A,1,Network Error
-774,N/A,0,Network Error
-776,N/A,0,Network Error
-780,N/A,1,Network Error
-781,N/A,1,Network Error
-784,N/A,2,Network Error
-785,N/A,0,Network Error
-787,N/A,1,Network Error
-789,N/A,1,Network Error
-791,N/A,0,Network Error
-793,N/A,0,Network Error
-797,N/A,1,Network Error
-797,N/A,2,Network Error
-798,N/A,0,Network Error
-801,N/A,1,Network Error
-803,N/A,1,Network Error
-804,N/A,1,Network Error
-806,N/A,0,Network Error
-808,N/A,0,Network Error
-811,N/A,1,Network Error
-813,N/A,1,Network Error
-815,N/A,0,Network Error
-817,N/A,1,Network Error
-819,N/A,1,Network Error
-819,N/A,0,Network Error
-823,N/A,1,Network Error
-825,N/A,0,Network Error
-827,N/A,0,Network Error
-830,N/A,2,Network Error
-830,N/A,0,Network Error
-832,N/A,0,Network Error
-835,N/A,1,Network Error
-837,N/A,1,Network Error
-839,N/A,1,Network Error
-840,N/A,0,Network Error
-843,N/A,0,Network Error
-847,N/A,2,Network Error
-847,N/A,1,Network Error
-849,N/A,0,Network Error
-851,N/A,1,Network Error
-852,N/A,0,Network Error
-854,N/A,1,Network Error
-856,N/A,0,Network Error
-858,N/A,0,Network Error
-860,N/A,0,Network Error
-864,N/A,1,Network Error
-864,N/A,0,Network Error
-867,N/A,1,Network Error
-868,N/A,1,Network Error
-870,N/A,1,Network Error
-872,N/A,0,Network Error
-874,N/A,0,Network Error
-876,N/A,0,Network Error
-879,N/A,1,Network Error
-881,N/A,0,Network Error
-883,N/A,1,Network Error
-884,N/A,0,Network Error
-887,N/A,1,Network Error
-889,N/A,1,Network Error
-890,N/A,0,Network Error
-893,N/A,0,Network Error
-896,N/A,1,Network Error
-897,N/A,1,Network Error
-898,N/A,0,Network Error
-901,N/A,1,Network Error
-901,N/A,0,Network Error
-904,N/A,0,Network Error
-906,N/A,0,Network Error
-908,N/A,0,Network Error
-910,N/A,1,Network Error
-912,N/A,1,Network Error
-914,N/A,0,Network Error
-917,N/A,1,Network Error
-919,N/A,1,Network Error
-920,N/A,1,Network Error
-922,N/A,0,Network Error
-924,N/A,0,Network Error
-926,N/A,0,Network Error
-928,N/A,1,Network Error
-931,N/A,1,Network Error
-932,N/A,0,Network Error
-934,N/A,1,Network Error
-936,N/A,1,Network Error
-939,N/A,1,Network Error
-940,N/A,0,Network Error
-942,N/A,1,Network Error
-945,N/A,1,Network Error
-945,N/A,0,Network Error
-948,N/A,0,Network Error
-951,N/A,1,Network Error
-953,N/A,1,Network Error
-954,N/A,1,Network Error
-956,N/A,0,Network Error
-958,N/A,0,Network Error
-962,N/A,0,Network Error
-962,N/A,1,Network Error
-965,N/A,1,Network Error
-967,N/A,1,Network Error
-967,N/A,0,Network Error
-971,N/A,1,Network Error
-972,N/A,0,Network Error
-974,N/A,0,Network Error
-976,N/A,0,Network Error
-979,N/A,2,Network Error
-981,N/A,1,Network Error
-982,N/A,0,Network Error
-985,N/A,1,Network Error
-987,N/A,0,Network Error
-989,N/A,0,Network Error
-991,N/A,0,Network Error
-992,N/A,0,Network Error
-995,N/A,1,Network Error
-997,N/A,1,Network Error
-998,N/A,0,Network Error
-1000,N/A,1,Network Error
-1003,N/A,1,Network Error
-1005,N/A,1,Network Error
-1006,N/A,0,Network Error
-1008,N/A,0,Network Error
-1011,N/A,1,Network Error
-1013,N/A,1,Network Error
-1014,N/A,0,Network Error
-1016,N/A,0,Network Error
-1019,N/A,1,Network Error
-1021,N/A,1,Network Error
-1022,N/A,1,Network Error
-1024,N/A,0,Network Error
-1026,N/A,0,Network Error
-1029,N/A,0,Network Error
-1030,N/A,0,Network Error
-1033,N/A,1,Network Error
-1033,N/A,0,Network Error
-1037,N/A,1,Network Error
-1039,N/A,0,Network Error
-1040,N/A,0,Network Error
-1043,N/A,1,Network Error
-1043,N/A,0,Network Error
-1047,N/A,1,Network Error
-1048,N/A,0,Network Error
-1051,N/A,1,Network Error
-1052,N/A,1,Network Error
-1054,N/A,0,Network Error
-1056,N/A,0,Network Error
-1058,N/A,0,Network Error
-1061,N/A,1,Network Error
-1064,N/A,1,Network Error
-1064,N/A,0,Network Error
-1067,N/A,1,Network Error
-1067,N/A,0,Network Error
-1070,N/A,1,Network Error
-1072,N/A,0,Network Error
-1074,N/A,0,Network Error
-1076,N/A,0,Network Error
-1080,N/A,0,Network Error
-1080,N/A,2,Network Error
-1085,N/A,1,Network Error
-1085,N/A,3,Network Error
-1086,N/A,0,Network Error
-1089,N/A,0,Network Error
-1090,N/A,0,Network Error
-1092,N/A,0,Network Error
-1096,N/A,2,Network Error
-1096,N/A,0,Network Error
-1098,N/A,0,Network Error
-1101,N/A,1,Network Error
-1103,N/A,1,Network Error
-1105,N/A,1,Network Error
-1106,N/A,0,Network Error
-1109,N/A,0,Network Error
-1112,N/A,1,Network Error
-1112,N/A,0,Network Error
-1115,N/A,0,Network Error
-1117,N/A,1,Network Error
-1117,N/A,0,Network Error
-1120,N/A,0,Network Error
-1122,N/A,0,Network Error
-1124,N/A,0,Network Error
-1126,N/A,0,Network Error
-1128,N/A,0,Network Error
-1130,N/A,0,Network Error
-1133,N/A,1,Network Error
-1135,N/A,1,Network Error
-1135,N/A,0,Network Error
-1138,N/A,1,Network Error
-1140,N/A,0,Network Error
-1142,N/A,0,Network Error
-1145,N/A,1,Network Error
-1147,N/A,0,Network Error
-1147,N/A,0,Network Error
-1150,N/A,1,Network Error
-1153,N/A,1,Network Error
-1153,N/A,0,Network Error
-1156,N/A,0,Network Error
-1158,N/A,0,Network Error
-1161,N/A,1,Network Error
-1163,N/A,1,Network Error
-1164,N/A,0,Network Error
-1167,N/A,1,Network Error
-1169,N/A,1,Network Error
-1171,N/A,0,Network Error
-1172,N/A,0,Network Error
-1174,N/A,0,Network Error
-1178,N/A,1,Network Error
-1179,N/A,1,Network Error
-1181,N/A,0,Network Error
-1182,N/A,0,Network Error
-1185,N/A,1,Network Error
-1186,N/A,1,Network Error
-1188,N/A,1,Network Error
-1190,N/A,0,Network Error
-1192,N/A,0,Network Error
-1194,N/A,1,Network Error
-1197,N/A,1,Network Error
-1199,N/A,0,Network Error
-1202,N/A,1,Network Error
-1202,N/A,0,Network Error
-1205,N/A,0,Network Error
-1206,N/A,0,Network Error
-1208,N/A,0,Network Error
-1211,N/A,1,Network Error
-1213,N/A,1,Network Error
-1215,N/A,0,Network Error
-1217,N/A,1,Network Error
-1221,N/A,2,Network Error
-1221,N/A,0,Network Error
-1223,N/A,0,Network Error
-1224,N/A,0,Network Error
-1226,N/A,0,Network Error
-1228,N/A,0,Network Error
-1230,N/A,0,Network Error
-1233,N/A,1,Network Error
-1235,N/A,1,Network Error
-1238,N/A,0,Network Error
-1238,N/A,3,Network Error
-1240,N/A,0,Network Error
-1242,N/A,0,Network Error
-1245,N/A,1,Network Error
-1247,N/A,0,Network Error
-1248,N/A,0,Network Error
-1251,N/A,1,Network Error
-1251,N/A,0,Network Error
-1254,N/A,0,Network Error
-1256,N/A,0,Network Error
-1258,N/A,0,Network Error
-1263,N/A,3,Network Error
-1263,N/A,1,Network Error
-1264,N/A,0,Network Error
-1266,N/A,0,Network Error
-1268,N/A,1,Network Error
-1271,N/A,1,Network Error
-1272,N/A,0,Network Error
-1274,N/A,0,Network Error
-1277,N/A,1,Network Error
-1278,N/A,1,Network Error
-1280,N/A,0,Network Error
-1282,N/A,0,Network Error
-1285,N/A,1,Network Error
-1285,N/A,0,Network Error
-1289,N/A,0,Network Error
-1291,N/A,0,Network Error
-1293,N/A,0,Network Error
-1295,N/A,1,Network Error
-1296,N/A,1,Network Error
-1298,N/A,0,Network Error
-1300,N/A,1,Network Error
-1303,N/A,1,Network Error
-1305,N/A,1,Network Error
-1306,N/A,0,Network Error
-1309,N/A,0,Network Error
-1311,N/A,1,Network Error
-1313,N/A,1,Network Error
-1315,N/A,0,Network Error
-1317,N/A,1,Network Error
-1318,N/A,1,Network Error
-1320,N/A,1,Network Error
-1322,N/A,0,Network Error
-1324,N/A,0,Network Error
-1327,N/A,0,Network Error
-1328,N/A,0,Network Error
-1331,N/A,1,Network Error
-1333,N/A,1,Network Error
-1334,N/A,1,Network Error
-1336,N/A,1,Network Error
-1338,N/A,0,Network Error
-1340,N/A,0,Network Error
-1342,N/A,0,Network Error
-1345,N/A,1,Network Error
-1347,N/A,0,Network Error
-1349,N/A,1,Network Error
-1351,N/A,1,Network Error
-1352,N/A,1,Network Error
-1354,N/A,0,Network Error
-1356,N/A,0,Network Error
-1358,N/A,0,Network Error
-1362,N/A,2,Network Error
-1362,N/A,0,Network Error
-1365,N/A,1,Network Error
-1366,N/A,0,Network Error
-1369,N/A,1,Network Error
-1369,N/A,0,Network Error
-1372,N/A,0,Network Error
-1374,N/A,0,Network Error
-1376,N/A,1,Network Error
-1379,N/A,1,Network Error
-1381,N/A,0,Network Error
-1383,N/A,1,Network Error
-1385,N/A,1,Network Error
-1385,N/A,0,Network Error
-1388,N/A,0,Network Error
-1390,N/A,0,Network Error
-1392,N/A,0,Network Error
-1395,N/A,1,Network Error
-1397,N/A,0,Network Error
-1399,N/A,1,Network Error
-1401,N/A,0,Network Error
-1401,N/A,1,Network Error
-1404,N/A,0,Network Error
-1406,N/A,0,Network Error
-1408,N/A,0,Network Error
-1410,N/A,1,Network Error
-1413,N/A,1,Network Error
-1414,N/A,0,Network Error
-1417,N/A,0,Network Error
-1419,N/A,0,Network Error
-1421,N/A,1,Network Error
-1423,N/A,2,Network Error
-1423,N/A,0,Network Error
-1427,N/A,1,Network Error
-1429,N/A,1,Network Error
-1431,N/A,0,Network Error
-1434,N/A,2,Network Error
-1435,N/A,1,Network Error
-1445,N/A,0,Network Error
-1445,N/A,9,Network Error
-1445,N/A,0,Network Error
-1445,N/A,0,Network Error
-1445,N/A,7,Network Error
-1447,N/A,0,Network Error
-1450,N/A,2,Network Error
-1452,N/A,2,Network Error
-1453,N/A,2,Network Error
-1453,N/A,0,Network Error
-1457,N/A,1,Network Error
-1459,N/A,1,Network Error
-1462,N/A,2,Network Error
-1463,N/A,1,Network Error
-1465,N/A,1,Network Error
-1467,N/A,1,Network Error
-1472,N/A,4,Network Error
-1472,N/A,3,Network Error
-1472,N/A,1,Network Error
-1475,N/A,1,Network Error
-1476,N/A,1,Network Error
-1479,N/A,1,Network Error
-1479,N/A,0,Network Error
-1485,N/A,3,Network Error
-1485,N/A,0,Network Error
-1488,N/A,3,Network Error
-1489,N/A,1,Network Error
-1490,N/A,0,Network Error
-1497,N/A,5,Network Error
-1497,N/A,1,Network Error
-1497,N/A,1,Network Error
-1499,N/A,0,Network Error
-1501,N/A,1,Network Error
-1503,N/A,1,Network Error
-1505,N/A,1,Network Error
-1507,N/A,1,Network Error
-1509,N/A,1,Network Error
-1510,N/A,1,Network Error
-1512,N/A,1,Network Error
-1514,N/A,0,Network Error
-1517,N/A,1,Network Error
-1517,N/A,0,Network Error
-1520,N/A,1,Network Error
-1523,N/A,1,Network Error
-1524,N/A,1,Network Error
-1528,N/A,2,Network Error
-1532,N/A,5,Network Error
-1532,N/A,0,Network Error
-1532,N/A,0,Network Error
-1534,N/A,1,Network Error
-1537,N/A,1,Network Error
-1539,N/A,1,Network Error
-1541,N/A,1,Network Error
-1542,N/A,0,Network Error
-1546,N/A,2,Network Error
-1548,N/A,3,Network Error
-1548,N/A,0,Network Error
-1551,N/A,1,Network Error
-1553,N/A,1,Network Error
-1553,N/A,0,Network Error
-1557,N/A,1,Network Error
-1559,N/A,1,Network Error
-1564,N/A,5,Network Error
-1564,N/A,0,Network Error
-1564,N/A,3,Network Error
-1567,N/A,1,Network Error
-1569,N/A,1,Network Error
-1570,N/A,1,Network Error
-1572,N/A,0,Network Error
-1575,N/A,1,Network Error
-1575,N/A,0,Network Error
-1579,N/A,1,Network Error
-1580,N/A,0,Network Error
-1587,N/A,2,Network Error
-1587,N/A,1,Network Error
-1594,N/A,9,Network Error
-1594,N/A,1,Network Error
-1594,N/A,1,Network Error
-1594,N/A,1,Network Error
-1594,N/A,1,Network Error
-1602,N/A,6,Network Error
-1602,N/A,0,Network Error
-1602,N/A,1,Network Error
-1602,N/A,1,Network Error
-1606,N/A,2,Network Error
-1606,N/A,0,Network Error
-1609,N/A,2,Network Error
-1609,N/A,0,Network Error
-1624,N/A,12,Network Error
-1624,N/A,0,Network Error
-1624,N/A,2,Network Error
-1624,N/A,4,Network Error
-1624,N/A,9,Network Error
-1624,N/A,7,Network Error
-1624,N/A,9,Network Error
-1630,N/A,3,Network Error
-1630,N/A,0,Network Error
-1630,N/A,1,Network Error
-1640,N/A,4,Network Error
-1640,N/A,0,Network Error
-1640,N/A,2,Network Error
-1642,N/A,4,Network Error
-1642,N/A,0,Network Error
-1642,N/A,0,Network Error
-1646,N/A,0,Network Error
-1646,N/A,0,Network Error
-1654,N/A,6,Network Error
-1654,N/A,0,Network Error
-1654,N/A,1,Network Error
-1654,N/A,4,Network Error
-1662,N/A,2,Network Error
-1662,N/A,0,Network Error
-1662,N/A,2,Network Error
-1662,N/A,2,Network Error
-1669,N/A,1,Network Error
-1669,N/A,0,Network Error
-1669,N/A,1,Network Error
-1669,N/A,1,Network Error
-1673,N/A,1,Network Error
-1676,N/A,1,Network Error
-1676,N/A,0,Network Error
-1679,N/A,1,Network Error
-1684,N/A,5,Network Error
-1684,N/A,0,Network Error
-1684,N/A,3,Network Error
-1687,N/A,1,Network Error
-1688,N/A,1,Network Error
-1695,N/A,3,Network Error
-1695,N/A,1,Network Error
-1698,N/A,3,Network Error
-1698,N/A,0,Network Error
-1698,N/A,1,Network Error
-1704,N/A,3,Network Error
-1704,N/A,0,Network Error
-1704,N/A,2,Network Error
-1707,N/A,1,Network Error
-1708,N/A,1,Network Error
-1712,N/A,2,Network Error
-1712,N/A,1,Network Error
-1716,N/A,2,Network Error
-1716,N/A,0,Network Error
-1720,N/A,1,Network Error
-1720,N/A,0,Network Error
-1724,N/A,0,Network Error
-1724,N/A,1,Network Error
-1730,N/A,4,Network Error
-1730,N/A,0,Network Error
-1730,N/A,3,Network Error
-1734,N/A,1,Network Error
-1734,N/A,0,Network Error
-1741,N/A,5,Network Error
-1741,N/A,0,Network Error
-1741,N/A,1,Network Error
-1741,N/A,3,Network Error
-1749,N/A,5,Network Error
-1749,N/A,1,Network Error
-1749,N/A,3,Network Error
-1751,N/A,1,Network Error
-1753,N/A,1,Network Error
-1755,N/A,1,Network Error
-1756,N/A,0,Network Error
-1759,N/A,0,Network Error
-1761,N/A,1,Network Error
-1761,N/A,0,Network Error
-1764,N/A,1,Network Error
-1766,N/A,1,Network Error
-1769,N/A,1,Network Error
-1771,N/A,1,Network Error
-1772,N/A,1,Network Error
-1774,N/A,1,Network Error
-1777,N/A,1,Network Error
-1781,N/A,3,Network Error
-1781,N/A,1,Network Error
-1782,N/A,1,Network Error
-1785,N/A,1,Network Error
-1787,N/A,1,Network Error
-1788,N/A,1,Network Error
-1793,N/A,1,Network Error
-1797,N/A,3,Network Error
-1797,N/A,0,Network Error
-1797,N/A,3,Network Error
-1803,N/A,5,Network Error
-1803,N/A,2,Network Error
-1803,N/A,4,Network Error
-1811,N/A,7,Network Error
-1811,N/A,2,Network Error
-1812,N/A,1,Network Error
-1812,N/A,1,Network Error
-1812,N/A,1,Network Error
-1815,N/A,1,Network Error
-1815,N/A,0,Network Error
-1819,N/A,1,Network Error
-1819,N/A,0,Network Error
-1824,N/A,1,Network Error
-1824,N/A,0,Network Error
-1826,N/A,1,Network Error
-1828,N/A,1,Network Error
-1831,N/A,1,Network Error
-1833,N/A,1,Network Error
-1833,N/A,0,Network Error
-1838,N/A,3,Network Error
-1838,N/A,0,Network Error
-1841,N/A,1,Network Error
-1843,N/A,1,Network Error
-1844,N/A,0,Network Error
-1847,N/A,1,Network Error
-1849,N/A,1,Network Error
-1852,N/A,2,Network Error
-1852,N/A,0,Network Error
-1854,N/A,1,Network Error
-1857,N/A,1,Network Error
-1859,N/A,1,Network Error
-1860,N/A,0,Network Error
-1864,N/A,2,Network Error
-1864,N/A,0,Network Error
-1866,N/A,0,Network Error
-1868,N/A,0,Network Error
-1870,N/A,1,Network Error
-1872,N/A,1,Network Error
-1875,N/A,1,Network Error
-1877,N/A,1,Network Error
-1877,N/A,0,Network Error
-1881,N/A,1,Network Error
-1881,N/A,0,Network Error
-1885,N/A,1,Network Error
-1887,N/A,1,Network Error
-1887,N/A,0,Network Error
-1891,N/A,1,Network Error
-1894,N/A,2,Network Error
-1894,N/A,0,Network Error
-1897,N/A,1,Network Error
-1899,N/A,1,Network Error
-1899,N/A,0,Network Error
-1904,N/A,2,Network Error
-1904,N/A,0,Network Error
-1906,N/A,1,Network Error
-1909,N/A,1,Network Error
-1913,N/A,1,Network Error
-1913,N/A,0,Network Error
-1913,N/A,1,Network Error
-1918,N/A,2,Network Error
-1918,N/A,0,Network Error
-1921,N/A,1,Network Error
-1921,N/A,0,Network Error
-1929,N/A,0,Network Error
-1929,N/A,5,Network Error
-1929,N/A,2,Network Error
-1929,N/A,4,Network Error
-1933,N/A,1,Network Error
-1933,N/A,0,Network Error
-1937,N/A,1,Network Error
-1939,N/A,0,Network Error
-1941,N/A,1,Network Error
-1947,N/A,4,Network Error
-1947,N/A,1,Network Error
-1947,N/A,3,Network Error
-1950,N/A,2,Network Error
-1950,N/A,1,Network Error
-1953,N/A,1,Network Error
-1955,N/A,0,Network Error
-1957,N/A,1,Network Error
-1960,N/A,3,Network Error
-1960,N/A,0,Network Error
-1964,N/A,2,Network Error
-1964,N/A,1,Network Error
-1967,N/A,1,Network Error
-1969,N/A,1,Network Error
-1971,N/A,0,Network Error
-1973,N/A,1,Network Error
-1974,N/A,0,Network Error
-1980,N/A,4,Network Error
-1980,N/A,3,Network Error
-1980,N/A,1,Network Error
-1983,N/A,1,Network Error
-1983,N/A,0,Network Error
-1987,N/A,1,Network Error
-1989,N/A,1,Network Error
-1996,N/A,2,Network Error
-1996,N/A,1,Network Error
-1997,N/A,3,Network Error
-1997,N/A,1,Network Error
-1999,N/A,2,Network Error
-1999,N/A,0,Network Error
-2002,N/A,1,Network Error
+426,200,410,
+428,200,419,
+429,200,411,
+446,200,435,
+457,200,450,
+460,200,455,
+461,200,435,
+468,200,454,
+471,200,453,
+509,200,483,
+553,200,552,
+566,200,545,
+575,200,473,
+575,200,486,
+586,200,553,
+598,200,568,
+606,200,576,
+644,200,610,
+660,200,561,
+670,200,554,
+674,200,670,
+690,200,664,
+693,200,591,
+694,200,633,
+701,200,604,
+718,200,623,
+720,200,683,
+726,200,640,
+729,200,618,
+759,200,694,
+763,200,685,
+781,200,703,
+782,200,744,
+787,200,727,
+811,200,692,
+831,200,720,
+833,200,790,
+854,200,808,
+873,200,786,
+876,200,782,
+901,200,831,
+908,200,794,
+909,200,823,
+909,200,836,
+920,200,873,
+930,200,860,
+948,200,897,
+950,200,886,
+951,200,896,
+951,200,871,
+1002,200,908,
+1003,200,946,
+1020,200,910,
+1021,200,971,
+1039,200,934,
+1047,200,601,
+1065,200,636,
+1066,200,999,
+1068,200,949,
+1086,200,1012,
+1092,200,631,
+1098,200,1045,
+1104,200,1063,
+1108,200,682,
+1109,200,542,
+1112,200,651,
+1127,200,654,
+1141,200,673,
+1144,200,715,
+1149,200,639,
+1170,200,499,
+1171,200,564,
+1174,200,717,
+1195,200,619,
+1210,200,535,
+1223,200,636,
+1244,200,599,
+1245,200,550,
+1250,200,696,
+1253,200,560,
+1261,200,685,
+1303,200,642,
+1309,200,591,
+1313,200,713,
+1322,200,595,
+1322,200,593,
+1331,200,630,
+1341,200,650,
+1343,200,622,
+1356,200,593,
+1369,200,587,
+1384,200,572,
+1385,200,625,
+1390,200,557,
+1402,200,615,
+1411,200,501,
+1418,200,636,
+1420,200,589,
+1445,200,493,
+1464,200,555,
+1481,200,549,
+1481,200,571,
+1482,200,581,
+1501,200,647,
+1504,200,627,
+1518,200,566,
+1518,200,645,
+1521,200,572,
+1552,200,631,
+1553,200,550,
+1562,200,558,
+1574,200,507,
+1576,200,626,
+1596,200,548,
+1604,200,583,
+1605,200,585,
+1607,200,514,
+1623,200,536,
+1625,200,557,
+1638,200,573,
+1649,200,500,
+1653,200,541,
+1670,200,189,
+1674,200,565,
+1675,200,533,
+1681,200,554,
+1682,200,437,
+1689,200,591,
+1694,200,589,
+1711,200,601,
+1718,200,457,
+1721,200,551,
+1750,200,578,
+1751,200,555,
+1757,200,448,
+1759,200,615,
+1778,200,528,
+1788,200,466,
+1790,200,615,
+1799,200,467,
+1805,200,552,
+1822,200,519,
+1822,200,578,
+1824,200,614,
+1832,200,609,
+1850,200,527,
+1855,200,542,
+1859,200,456,
+1873,200,454,
+1882,200,498,
+1889,200,548,
+1894,200,551,
+1910,200,554,
+1910,200,520,
+1914,200,469,
+1928,200,543,
+1942,200,459,
+1954,200,585,
+1958,200,547,
+1960,200,458,
+1976,200,937,
+1984,200,563,
+1984,200,463,
+1999,200,534,
+2007,200,446,
+2008,200,490,
+2021,200,517,
+2025,200,506,
+2026,200,545,
+2044,200,491,
+2045,200,492,
+2047,200,472,
+2049,200,399,
+2067,200,459,
+2070,200,395,
+2075,200,452,
+2084,200,487,
+2091,200,437,
+2112,200,487,
+2116,200,539,
+2126,200,445,
+2128,200,489,
+2133,200,527,
+2133,200,462,
+2148,200,458,
+2148,200,427,
+2156,200,474,
+2157,200,483,
+2182,200,488,
+2182,200,463,
+2194,200,589,
+2194,200,434,
+2203,200,403,
+2238,200,450,
+2238,200,448,
+2240,200,489,
+2249,200,491,
+2264,200,441,
+2291,200,485,
+2294,200,544,
+2320,200,609,
+2330,200,471,
+2376,200,487,
+2378,200,482,
+2381,200,470,
+2394,200,544,
+2395,200,571,
+2395,200,540,
+2396,200,482,
+2401,200,528,
+2403,200,570,
+2405,200,444,
+2411,200,469,
+2422,200,511,
+2425,200,602,
+2427,200,648,
+2457,200,574,
+2461,200,416,
+2471,200,422,
+2479,200,520,
+2495,200,496,
+2498,200,569,
+2504,200,478,
+2520,200,498,
+2529,200,454,
+2532,200,507,
+2553,200,568,
+2574,200,619,
+2590,200,523,
+2590,200,583,
+2592,200,583,
+2593,200,609,
+2597,200,620,
+2607,200,523,
+2636,200,508,
+2649,200,467,
+2658,200,159,
+2660,200,527,
+2683,200,571,
+2685,200,490,
+2698,200,550,
+2706,200,659,
+2708,200,459,
+2709,200,561,
+2716,200,584,
+2722,200,528,
+2727,200,683,
+2731,200,615,
+2744,200,367,
+2745,200,453,
+2755,200,598,
+2760,200,379,
+2766,200,608,
+2792,200,554,
+2800,200,343,
+2801,200,674,
+2806,200,512,
+2811,200,573,
+2823,200,401,
+2828,200,646,
+2829,200,565,
+2830,200,434,
+2831,200,453,
+2831,200,511,
+2843,200,371,
+2853,200,457,
+2865,200,662,
+2876,200,784,
+2889,200,819,
+2901,200,496,
+2903,200,407,
+2907,200,576,
+2911,200,391,
+2911,200,378,
+2928,200,449,
+2945,200,542,
+2960,200,558,
+2961,200,566,
+3004,200,577,
+3031,200,635,
+3038,200,626,
+3038,200,508,
+3040,200,799,
+3042,200,450,
+3059,200,371,
+3059,200,467,
+3061,200,556,
+3069,200,411,
+3076,200,344,
+3082,200,432,
+3116,200,455,
+3132,200,578,
+3150,200,422,
+3155,200,694,
+3158,200,584,
+3169,200,377,
+3174,200,489,
+3193,200,768,
+3232,200,524,
+3233,200,467,
+3238,200,408,
+3244,200,354,
+3245,200,421,
+3265,200,464,
+3283,200,451,
+3288,200,571,
+3288,200,581,
+3290,200,545,
+3293,200,685,
+3295,200,451,
+3302,200,704,
+3310,200,509,
+3314,200,21,
+3327,200,736,
+3342,200,586,
+3344,200,634,
+3360,200,548,
+3363,200,451,
+3380,200,472,
+3383,200,623,
+3384,200,554,
+3392,200,323,
+3395,200,801,
+3396,200,484,
+3397,200,521,
+3400,200,655,
+3407,200,446,
+3414,200,469,
+3424,200,495,
+3438,200,606,
+3460,200,400,
+3460,200,499,
+3463,200,827,
+3484,200,580,
+3501,200,462,
+3506,200,604,
+3519,200,488,
+3520,200,797,
+3520,200,666,
+3522,200,518,
+3524,200,486,
+3526,200,660,
+3527,200,485,
+3527,200,410,
+3530,200,489,
+3546,200,300,
+3547,200,46,
+3560,200,861,
+3561,200,165,
+3562,200,734,
+3563,200,370,
+3564,200,326,
+3568,200,335,
+3572,200,338,
+3573,200,328,
+3575,200,499,
+3590,200,262,
+3593,200,537,
+3594,200,512,
+3599,200,303,
+3602,200,300,
+3609,200,89,
+3609,200,326,
+3611,200,322,
+3621,200,260,
+3639,200,232,
+3641,200,277,
+3643,200,248,
+3645,200,247,
+3649,200,308,
+3653,200,503,
+3659,200,370,
+3669,200,254,
+3670,200,246,
+3712,200,367,
+3729,200,463,
+3743,200,453,
+3749,200,435,
+3761,200,586,
+3764,200,384,
+3769,200,305,
+3770,200,332,
+3772,200,372,
+3773,200,389,
+3785,200,401,
+3785,200,325,
+3790,200,330,
+3803,200,996,
+3805,200,636,
+3820,200,510,
+3821,200,428,
+3829,200,307,
+3841,200,709,
+3843,200,781,
+3850,200,260,
+3851,200,283,
+3858,200,338,
+3868,200,340,
+3885,200,730,
+3907,200,307,
+3908,200,267,
+3912,200,753,
+3929,200,283,
+3929,200,446,
+3937,200,430,
+3957,200,393,
+3988,200,441,
+3991,200,347,
+4011,200,268,
+4012,200,363,
+4014,200,441,
+4021,200,445,
+4021,200,368,
+4022,200,428,
+4027,200,507,
+4036,200,366,
+4047,200,283,
+4049,200,438,
+4053,200,282,
+4053,200,304,
+4055,200,325,
+4056,200,484,
+4058,200,495,
+4059,200,457,
+4070,200,297,
+4077,200,292,
+4082,200,261,
+4101,200,339,
+4101,200,479,
+4101,200,260,
+4103,200,494,
+4109,200,549,
+4111,200,585,
+4112,200,343,
+4133,200,524,
+4134,200,588,
+4146,200,581,
+4153,200,349,
+4155,200,312,
+4157,200,445,
+4166,200,642,
+4171,200,610,
+4180,200,328,
+4181,200,375,
+4182,200,397,
+4206,200,355,
+4209,200,301,
+4210,200,540,
+4214,200,345,
+4241,200,382,
+4241,200,312,
+4243,200,228,
+4274,200,282,
+4285,200,352,
+4285,200,452,
+4285,200,462,
+4293,200,762,
+4295,200,387,
+4298,200,360,
+4301,200,251,
+4313,200,291,
+4313,200,235,
+4316,200,259,
+4316,200,304,
+4340,200,280,
+4343,200,430,
+4349,200,336,
+4353,200,270,
+4359,200,306,
+4359,200,304,
+4364,200,314,
+4378,200,276,
+4379,200,320,
+4385,200,204,
+4388,200,206,
+4391,200,797,
+4395,200,867,
+4400,200,219,
+4400,200,346,
+4410,200,252,
+4422,200,207,
+4423,200,783,
+4425,200,324,
+4427,200,271,
+4449,200,150,
+4455,200,301,
+4458,200,685,
+4480,200,689,
+4482,200,445,
+4486,200,202,
+4487,200,416,
+4487,200,459,
+4490,200,830,
+4490,200,467,
+4492,200,179,
+4494,200,284,
+4508,200,165,
+4519,200,91,
+4520,200,279,
+4522,200,206,
+4530,200,287,
+4536,200,186,
+4558,200,265,
+4570,200,436,
+4570,200,460,
+4576,200,282,
+4577,200,367,
+4581,200,415,
+4589,200,276,
+4614,200,332,
+4628,200,515,
+4636,200,276,
+4636,200,245,
+4646,200,543,
+4649,200,253,
+4656,200,373,
+4657,200,510,
+4657,200,450,
+4662,200,640,
+4686,200,308,
+4702,200,338,
+4709,200,575,
+4719,200,444,
+4720,200,270,
+4728,200,233,
+4732,200,277,
+4735,200,563,
+4738,200,497,
+4743,200,785,
+4746,200,645,
+4747,200,119,
+4749,200,432,
+4753,200,353,
+4761,200,268,
+4768,200,245,
+4771,200,283,
+4798,200,316,
+4803,200,283,
+4808,200,429,
+4810,200,458,
+4816,200,427,
+4836,200,477,
+4837,200,849,
+4837,200,357,
+4897,200,475,
+4898,200,411,
+4903,200,367,
+4904,200,504,
+4907,200,399,
+4908,200,337,
+4920,200,433,
+4921,200,497,
+4923,200,1037,
+4935,200,353,
+4935,200,357,
+4944,200,241,
+4945,200,455,
+4954,200,365,
+4956,200,571,
+4957,200,119,
+4977,200,567,
+4981,200,491,
+4995,200,348,
+4995,200,570,
+5005,200,188,
+5006,200,447,
+5007,200,350,
+5008,200,394,
+5019,200,448,
+5039,200,382,
+5041,200,510,
+5048,200,361,
+5049,200,938,
+5050,200,401,
+5053,200,755,
+5108,200,365,
+5116,200,539,
+5125,200,392,
+5129,200,466,
+5129,200,390,
+5134,200,424,
+5135,200,388,
+5137,200,418,
+5138,200,385,
+5147,200,490,
+5150,200,810,
+5150,200,389,
+5156,200,388,
+5202,200,474,
+5205,200,298,
+5206,200,407,
+5206,200,748,
+5208,200,571,
+5212,200,401,
+5215,200,294,
+5216,200,412,
+5222,200,298,
+5225,200,706,
+5228,200,482,
+5231,200,333,
+5233,200,395,
+5233,200,462,
+5235,200,337,
+5236,200,327,
+5238,200,503,
+5241,200,202,
+5260,200,315,
+5266,200,311,
+5287,200,343,
+5300,200,463,
+5312,200,406,
+5313,200,331,
+5314,200,565,
+5321,200,364,
+5344,200,349,
+5347,200,352,
+5354,200,433,
+5357,200,454,
+5363,200,354,
+5368,200,560,
+5371,200,50,
+5384,200,747,
+5390,200,670,
+5397,200,419,
+5397,200,343,
+5404,200,469,
+5409,200,279,
+5430,200,294,
+5432,200,390,
+5438,200,137,
+5438,200,287,
+5444,200,238,
+5447,200,428,
+5452,200,517,
+5465,200,259,
+5466,200,350,
+5472,200,335,
+5488,200,286,
+5519,200,288,
+5523,200,300,
+5554,200,403,
+5557,200,550,
+5558,200,349,
+5566,200,436,
+5569,200,136,
+5573,200,347,
+5578,200,421,
+5584,200,367,
+5588,200,462,
+5595,200,460,
+5598,200,549,
+5603,200,212,
+5604,200,647,
+5614,200,230,
+5615,200,354,
+5615,200,506,
+5618,200,171,
+5621,200,382,
+5637,200,499,
+5639,200,281,
+5640,200,424,
+5644,200,638,
+5651,200,280,
+5664,200,427,
+5666,200,399,
+5702,200,554,
+5702,200,697,
+5712,200,357,
+5714,200,95,
+5730,200,494,
+5741,200,331,
+5784,200,339,
+5791,200,741,
+5803,200,405,
+5807,200,600,
+5812,200,381,
+5816,200,468,
+5826,200,584,
+5827,200,514,
+5839,200,627,
+5843,200,479,
+5850,200,616,
+5855,200,805,
+5856,200,451,
+5856,200,568,
+5862,200,424,
+5870,200,525,
+5881,200,567,
+5891,200,371,
+5905,200,438,
+5906,200,433,
+5909,200,598,
+5920,200,482,
+5936,200,568,
+5943,200,385,
+5955,200,360,
+5966,200,314,
+5969,200,391,
+5976,200,392,
+5979,200,277,
+5980,200,359,
+5984,200,368,
+5989,200,386,
+6003,200,769,
+6012,200,783,
+6017,200,402,
+6025,200,312,
+6032,200,459,
+6034,200,370,
+6038,200,440,
+6040,200,328,
+6045,200,400,
+6048,200,433,
+6051,200,585,
+6052,200,386,
+6055,200,314,
+6063,200,665,
+6069,200,285,
+6070,200,501,
+6073,200,620,
+6081,200,277,
+6082,200,291,
+6082,200,559,
+6090,200,388,
+6095,200,151,
+6109,200,551,
+6112,200,285,
+6113,200,287,
+6140,200,249,
+6143,200,336,
+6144,200,160,
+6146,200,284,
+6149,200,278,
+6157,200,314,
+6157,200,518,
+6161,200,192,
+6163,200,196,
+6176,200,187,
+6181,200,614,
+6187,200,231,
+6190,200,373,
+6206,200,269,
+6223,200,142,
+6233,200,679,
+6245,200,219,
+6249,200,368,
+6252,200,332,
+6260,200,351,
+6262,200,149,
+6268,200,288,
+6270,200,630,
+6273,200,635,
+6279,200,690,
+6294,200,259,
+6308,200,304,
+6308,200,451,
+6308,200,468,
+6308,200,225,
+6329,200,280,
+6334,200,321,
+6335,200,429,
+6335,200,485,
+6338,200,482,
+6351,200,268,
+6364,200,310,
+6373,200,260,
+6379,200,566,
+6382,200,893,
+6386,200,277,
+6401,200,338,
+6412,200,150,
+6420,200,815,
+6421,200,380,
+6421,200,383,
+6422,200,265,
+6426,200,447,
+6448,200,290,
+6450,200,300,
+6451,200,380,
+6458,200,270,
+6460,200,370,
+6460,200,297,
+6462,200,444,
+6463,200,407,
+6470,200,425,
+6470,200,375,
+6490,200,633,
+6494,200,317,
+6496,200,351,
+6516,200,786,
+6522,200,378,
+6533,200,463,
+6546,200,399,
+6572,200,303,
+6576,200,503,
+6576,200,670,
+6589,200,318,
+6608,200,348,
+6611,200,224,
+6617,200,364,
+6621,200,313,
+6625,200,379,
+6629,200,170,
+6631,200,469,
+6631,200,358,
+6632,200,492,
+6636,200,166,
+6642,200,409,
+6644,200,309,
+6649,200,399,
+6665,200,331,
+6686,200,463,
+6691,200,353,
+6700,200,278,
+6702,200,280,
+6707,200,355,
+6712,200,505,
+6715,200,288,
+6722,200,531,
+6722,200,745,
+6726,200,675,
+6738,200,267,
+6751,200,300,
+6753,200,721,
+6759,200,379,
+6767,200,393,
+6789,200,478,
+6791,200,409,
+6830,200,365,
+6833,200,370,
+6833,200,372,
+6835,200,317,
+6854,200,490,
+6863,200,214,
+6869,200,419,
+6870,200,376,
+6872,200,325,
+6875,200,353,
+6880,200,390,
+6882,200,349,
+6894,200,250,
+6897,200,589,
+6911,200,415,
+6919,200,301,
+6942,200,333,
+6942,200,529,
+6943,200,615,
+6943,200,370,
+6953,200,658,
+6953,200,287,
+6957,200,346,
+6966,200,377,
+6966,200,658,
+6967,200,336,
+6972,200,340,
+6981,200,579,
+6984,200,522,
+7025,200,403,
+7030,200,582,
+7033,200,404,
+7034,200,755,
+7043,200,466,
+7050,200,629,
+7055,200,874,
+7071,200,358,
+7072,200,736,
+7076,200,349,
+7082,200,381,
+7087,200,102,
+7091,200,459,
+7122,200,496,
+7125,200,422,
+7132,200,165,
+7139,200,453,
+7145,200,502,
+7151,200,317,
+7159,200,326,
+7187,200,465,
+7196,200,559,
+7201,200,289,
+7213,200,474,
+7216,200,235,
+7220,200,388,
+7222,200,350,
+7226,200,331,
+7235,200,520,
+7235,200,282,
+7243,200,491,
+7246,200,377,
+7253,200,494,
+7265,200,347,
+7270,200,303,
+7274,200,551,
+7286,200,333,
+7288,200,346,
+7298,200,722,
+7299,200,327,
+7301,200,879,
+7302,200,516,
+7305,200,362,
+7306,200,615,
+7313,200,606,
+7315,200,372,
+7320,200,492,
+7327,200,447,
+7329,200,362,
+7334,200,567,
+7336,200,293,
+7338,200,381,
+7355,200,324,
+7356,200,284,
+7359,200,234,
+7360,200,326,
+7361,200,290,
+7361,200,285,
+7362,200,570,
+7364,200,501,
+7368,200,492,
+7368,200,615,
+7370,200,516,
+7372,200,289,
+7389,200,491,
+7400,200,345,
+7407,200,356,
+7407,200,525,
+7417,200,392,
+7432,200,561,
+7436,200,403,
+7443,200,298,
+7445,200,305,
+7451,200,232,
+7452,200,320,
+7454,200,511,
+7456,200,233,
+7477,200,276,
+7496,200,374,
+7539,200,342,
+7544,200,309,
+7549,200,261,
+7552,200,364,
+7552,200,250,
+7553,200,401,
+7558,200,151,
+7558,200,345,
+7578,200,210,
+7580,200,493,
+7601,200,104,
+7606,200,362,
+7609,200,374,
+7613,200,387,
+7614,200,252,
+7616,200,257,
+7624,200,465,
+7637,200,185,
+7645,200,280,
+7647,200,201,
+7649,200,260,
+7654,200,563,
+7656,200,301,
+7660,200,353,
+7664,200,343,
+7665,200,449,
+7669,200,422,
+7672,200,217,
+7673,200,358,
+7684,200,241,
+7695,200,335,
+7696,200,295,
+7696,200,278,
+7700,200,244,
+7701,200,294,
+7703,200,375,
+7704,200,226,
+7704,200,268,
+7707,200,453,
+7717,200,378,
+7723,200,271,
+7734,200,182,
+7736,200,303,
+7744,200,430,
+7748,200,418,
+7753,200,208,
+7755,200,399,
+7765,200,478,
+7769,200,398,
+7805,200,254,
+7807,200,508,
+7816,200,543,
+7822,200,485,
+7822,200,449,
+7823,200,557,
+7826,200,464,
+7833,200,532,
+7839,200,472,
+7839,200,560,
+7839,200,503,
+7845,200,540,
+7853,200,310,
+7853,200,549,
+7865,200,497,

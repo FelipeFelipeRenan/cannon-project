@@ -63,23 +63,23 @@
   "target": "http://localhost:8081/api/v1/accounts",
   "total_requests": 1000,
   "concurrency": 60,
-  "successes": 0,
-  "failures": 1000,
-  "min_ms": 0.0,
-  "avg_ms": 0.0,
-  "p50_ms": 0.0,
-  "p95_ms": 0.0,
-  "p99_ms": 0.0,
-  "max_ms": 0.0,
-  "actual_rps": 0.0,
+  "successes": 1000,
+  "failures": 0,
+  "min_ms": 21.056,
+  "avg_ms": 458.856,
+  "p50_ms": 451.327,
+  "p95_ms": 770.047,
+  "p99_ms": 937.471,
+  "max_ms": 1063.935,
+  "actual_rps": 127.12644687363716,
   "bytes_sent": 0,
-  "bytes_received": 0,
-  "status_codes": {},
-  "errors": {
-    "Network Error": 1000
+  "bytes_received": 13748000,
+  "status_codes": {
+    "200": 1000
   },
-  "duration_secs": 2.003304903,
-  "apdex_score": 0.0
+  "errors": {},
+  "duration_secs": 7.866183824,
+  "apdex_score": 0.0185
 };
         const mbSent = data.bytes_sent / 1048576;
         const mbRecv = data.bytes_received / 1048576;
