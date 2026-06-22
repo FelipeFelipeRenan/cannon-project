@@ -97,7 +97,7 @@ pub async fn run_workers(
                             assertion_success,
                         }
                     }
-                  Err(e) => {
+                    Err(e) => {
                         // O microscópio de infraestrutura
                         let err_category = if e.is_timeout() {
                             "Timeout Exceeded".to_string()
@@ -129,11 +129,12 @@ pub async fn run_workers(
         handles.push(handle);
     }
 
-// 3. O Metrônomo (Producer) agora usa tempo ABSOLUTO para evitar o "Drift"
+    // 3. O Metrônomo (Producer) agora usa tempo ABSOLUTO para evitar o "Drift"
     if let Some(r) = rps {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs_f64(1.0 / r as f64));
+        let mut interval =
+            tokio::time::interval(std::time::Duration::from_secs_f64(1.0 / r as f64));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Burst);
-        
+
         for _ in 0..count {
             interval.tick().await; // Espera o próximo pulso exato do relógio
             let _ = job_tx.send(()).await;
