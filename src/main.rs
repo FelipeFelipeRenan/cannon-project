@@ -77,24 +77,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             args.headers = yaml_headers;
         }
     }
-    // Validação final de segurança: O URL tem que existir depois do merge
-    if args.url.is_none() {
+    // Extrai a URL ou mata o processo de forma graciosa
+    let url_str = args.url.clone().unwrap_or_else(|| {
         eprintln!(
-            "❌ Erro: É necessário fornecer uma URL via flag (-u) ou no ficheiro YAML (--config)"
+            "{} É necessário fornecer uma URL via flag (-u) ou no ficheiro YAML (--config)",
+            "❌ Erro:".red().bold()
+        );
+        std::process::exit(1);
+    });
+
+    // Blinda contra SSRF (Server-Side Request Forgery)
+    if !url_str.starts_with("http://") && !url_str.starts_with("https://") {
+        eprintln!(
+            "{} A URL do alvo deve começar com http:// ou https://",
+            "❌ Erro Crítico:".red().bold()
         );
         std::process::exit(1);
     }
-
-    let url_str = match args.url.as_ref() {
-        Some(u) => u.clone(),
-        None => {
-            eprintln!(
-                "{} O argumento '--url <URL>' é obrigatório para iniciar o teste.",
-                "error:".red().bold()
-            );
-            std::process::exit(1);
-        }
-    };
 
     let parsed_percentiles: Vec<f64> = args
         .percentiles
@@ -104,11 +103,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     let mut client_builder = reqwest::Client::builder()
-        .tcp_nodelay(true)
-        .pool_max_idle_per_host(args.workers as usize)
+        // Otimizações de Latência e Rede
+        .tcp_nodelay(true) // Desativa Nagle's algorithm (bom para disparos rápidos)
+        .tcp_keepalive(std::time::Duration::from_secs(60)) // Mantém a conexão TCP viva
+        .pool_max_idle_per_host(args.workers as usize) // Um tubo TCP dedicado por worker
         .pool_idle_timeout(Some(std::time::Duration::from_secs(90)))
+        // Configurações do Usuário
         .user_agent(&args.user_agent)
-        .timeout(std::time::Duration::from_millis(args.timeout))
         .connect_timeout(std::time::Duration::from_millis(args.connect_timeout))
         .timeout(std::time::Duration::from_millis(args.timeout));
 
