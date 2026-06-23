@@ -1,11 +1,5 @@
-mod args;
-mod engine;
-mod payload;
-mod report;
-
-use crate::args::Args;
-use crate::report::LatencyMetrics;
-use crate::report::{to_ms, FinalReport};
+use cannon::args::parser::Args;
+use cannon::report::cli::{generate_html_report, print_banner, print_summary, to_ms, FinalReport};
 use clap::Parser;
 use colored::Colorize;
 use hdrhistogram::Histogram;
@@ -23,78 +17,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // Se o utilizador passou um ficheiro YAML, lemos e fazemos o merge
-    if let Some(config_path) = &args.config {
-        let yaml_str = std::fs::read_to_string(config_path)
-            .unwrap_or_else(|_| panic!("❌ Erro: Não foi possível ler o arquivo {}", config_path));
-
-        let conf: args::FileConfig = serde_yaml::from_str(&yaml_str)
-            .unwrap_or_else(|e| panic!("❌ Erro no formato YAML: {}", e));
-
-        // Regra de Ouro: O YAML sobrepõe os valores padrão da CLI
-        if conf.url.is_some() {
-            args.url = conf.url;
-        }
-        if let Some(w) = conf.workers {
-            args.workers = w;
-        }
-        if let Some(c) = conf.count {
-            args.count = c;
-        }
-        if let Some(rps) = conf.rps {
-            args.rps = Some(rps);
-        }
-        if let Some(t) = conf.timeout {
-            args.timeout = t;
-        }
-        if let Some(m) = conf.method {
-            args.method = m;
-        }
-        if let Some(body) = conf.body {
-            args.body = Some(body);
-        }
-        if let Some(exp) = conf.expect {
-            args.expect = Some(exp);
-        }
-        if let Some(apdex) = conf.apdex_t {
-            args.apdex_t = apdex;
-        }
-        if let Some(ins) = conf.insecure {
-            args.insecure = ins;
-        }
-        if let Some(csv_path) = conf.csv {
-            args.csv = Some(csv_path)
-        }
-        if let Some(h2) = conf.http2 {
-            args.http2 = h2;
-        }
-        if let Some(ct) = conf.connect_timeout {
-            args.connect_timeout = ct;
-        }
-        // Concatena headers do YAML com os headers passados na CLI (se houver)
-        if let Some(mut yaml_headers) = conf.headers {
-            yaml_headers.append(&mut args.headers);
-            args.headers = yaml_headers;
-        }
-    }
+    // Se o utilizador passou um ficheiro YAML, fazemos o merge com a CLI
+    cannon::args::config::merge_with_yaml(&mut args);
     // Extrai a URL ou mata o processo de forma graciosa
-    let url_str = args.url.clone().unwrap_or_else(|| {
-        eprintln!(
-            "{} É necessário fornecer uma URL via flag (-u) ou no ficheiro YAML (--config)",
-            "❌ Erro:".red().bold()
-        );
-        std::process::exit(1);
-    });
-
-    // Blinda contra SSRF (Server-Side Request Forgery)
-    if !url_str.starts_with("http://") && !url_str.starts_with("https://") {
-        eprintln!(
-            "{} A URL do alvo deve começar com http:// ou https://",
-            "❌ Erro Crítico:".red().bold()
-        );
-        std::process::exit(1);
-    }
-
+    let url_str = cannon::security::url_validator::validate_and_extract(&args.url);
+    // Transforma os percentis da CLI para a escala matemática do HdrHistogram
+    // Transforma os percentis da CLI para a escala matemática do HdrHistogram
     let parsed_percentiles: Vec<f64> = args
         .percentiles
         .split(',')
@@ -102,26 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|p| p / 100.0)
         .collect();
 
-    let mut client_builder = reqwest::Client::builder()
-        // Otimizações de Latência e Rede
-        .tcp_nodelay(true) // Desativa Nagle's algorithm (bom para disparos rápidos)
-        .tcp_keepalive(std::time::Duration::from_secs(60)) // Mantém a conexão TCP viva
-        .pool_max_idle_per_host(args.workers as usize) // Um tubo TCP dedicado por worker
-        .pool_idle_timeout(Some(std::time::Duration::from_secs(90)))
-        // Configurações do Usuário
-        .user_agent(&args.user_agent)
-        .connect_timeout(std::time::Duration::from_millis(args.connect_timeout))
-        .timeout(std::time::Duration::from_millis(args.timeout));
-
-    if args.insecure {
-        client_builder = client_builder.danger_accept_invalid_certs(true);
-    }
-
-    if args.http2 {
-        client_builder = client_builder.http2_prior_knowledge();
-    }
-
-    let client = Arc::new(client_builder.build()?);
+    let client = Arc::new(cannon::client::http::build_optimized_client(&args)?);
 
     let url = Arc::new(url_str);
     let headers = Arc::new(args.headers.clone());
@@ -152,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let expect_arc = args.expect.clone().map(Arc::new);
 
     // Inicia o motor em background
-    tokio::spawn(engine::run_workers(
+    tokio::spawn(cannon::engine::worker::run_workers(
         args.count,
         args.workers,
         url.clone(),
@@ -209,7 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Some(res) => {
                             if let Some(w) = &mut csv_writer {
                             let ts = start_test.elapsed().as_millis().to_string();
-                            let status = res.status_code.map(|c| c.to_string()).unwrap_or_else(|| "N/A".to_string());
+                            let status = res.status_code.map(|c: u16| c.to_string()).unwrap_or_else(|| "N/A".to_string());
                             let lat = res.duration.as_millis().to_string();
                             let err = res.error.clone().unwrap_or_default();
                             let _ = w.write_record(&[ts, status, lat, err]);
@@ -331,7 +240,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if let Some(path) = &args.html {
-            report::generate_html_report(path, &json_data)?;
+            generate_html_report(path, &json_data)?;
             println!(
                 "🌐 Relatório HTML salvo com sucesso em {}!",
                 path.bright_cyan()
@@ -340,195 +249,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn print_summary(
-    successes: u64,
-    failures: u64,
-    hist: &Histogram<u64>,
-    total: std::time::Duration,
-    target_rps: Option<u32>,
-    status_counts: std::collections::HashMap<u16, u64>,
-    error_counts: std::collections::HashMap<String, u64>,
-    assertion_failures: u64,
-    bytes_sent: u64,
-    bytes_recv: u64,
-    percentiles: &[f64],
-) {
-    println!("\n{}", "--- 🏁 RELATÓRIO DO CANNON ---".bold().underline());
-    println!("Sucessos:     {}", successes);
-    println!("Falhas:       {}", failures);
-
-    let mut metrics = Vec::new();
-    if successes > 0 {
-        let to_ms_str = |v| format!("{:.2}ms", to_ms(v));
-
-        metrics.push(LatencyMetrics {
-            metric: "Mínimo".to_string(),
-            value: to_ms_str(hist.min()),
-        });
-
-        metrics.push(LatencyMetrics {
-            metric: "Média".to_string(),
-            value: to_ms_str(hist.mean() as u64),
-        });
-
-        // O MOTOR DINÂMICO DE PERCENTIS
-        for &p in percentiles {
-            let p_val = p * 100.0;
-
-            // Se for cravado (ex: 50.0), imprime "p50". Se for fracionado (ex: 99.9), imprime "p99.9"
-            let p_label = if p_val.fract() == 0.0 {
-                if p_val == 50.0 {
-                    "p50 (Mediana)".to_string()
-                } else {
-                    format!("p{:.0}", p_val)
-                }
-            } else {
-                format!("p{}", p_val)
-            };
-
-            metrics.push(LatencyMetrics {
-                metric: p_label,
-                value: to_ms_str(hist.value_at_quantile(p)),
-            });
-        }
-
-        metrics.push(LatencyMetrics {
-            metric: "Máximo".to_string(),
-            value: to_ms_str(hist.max()),
-        });
-
-        report::render_ascii_histogram(hist);
-        println!("\n{}", "-------------------------".bright_black());
-    }
-
-    let table = tabled::Table::new(metrics)
-        .with(tabled::settings::Style::modern())
-        .to_string();
-
-    println!("{}", table);
-    println!(
-        "{} {} | {} {} | {} {:?}",
-        "✅ Sucessos:".green().bold(),
-        successes.to_string().bright_white(),
-        "❌ Falhas:".red().bold(),
-        failures.to_string().bright_white(),
-        "⏱️ Tempo Total:".cyan().bold(),
-        total
-    );
-
-    let total_secs = total.as_secs_f64();
-    let actual_rps = successes as f64 / total_secs;
-
-    println!("\n{}", "-------------------------".bright_black());
-
-    println!(
-        "\n{}",
-        "📊 DISTRIBUIÇÃO DE STATUS CODES".bold().bright_white()
-    );
-
-    let mut codes: Vec<_> = status_counts.into_iter().collect();
-
-    codes.sort_by_key(|a| a.0);
-
-    for (code, count) in codes {
-        let color_code = match code {
-            200..=299 => code.to_string().green(),
-            400..=499 => code.to_string().yellow(),
-            _ => code.to_string().red(),
-        };
-
-        println!("  HTTP {}: {}", color_code, count);
-    }
-
-    if !error_counts.is_empty() {
-        println!("\n{}", "❌ DETALHAMENTO DE FALHAS".bold().red());
-
-        // Converte para vetor e ordena (maior quantidade de erros no topo)
-        let mut sorted_errors: Vec<_> = error_counts.into_iter().collect();
-        sorted_errors.sort_by_key(|item| std::cmp::Reverse(item.1));
-        for (err, count) in sorted_errors {
-            // Calcula a porcentagem em relação ao total de falhas
-            let perc = (count as f64 / failures as f64) * 100.0;
-            println!(
-                "  {:<30} {:>6} ({:>4.1}%)",
-                err.yellow(),
-                count.to_string().bright_white(),
-                perc
-            );
-        }
-    }
-
-    if assertion_failures > 0 {
-        println!(
-            "❌ Falhas de Asserção: {}",
-            assertion_failures.to_string().red()
-        );
-    }
-
-    println!("\n{}", "-------------------------".bright_black());
-
-    println!("\n{}", "📈 EFICIÊNCIA E REDE".bold().bright_white());
-
-    // --- NOVA LÓGICA DE CÁLCULO DE MB/s ---
-    let sent_mb = bytes_sent as f64 / 1_048_576.0; // Divide por 1024^2
-    let recv_mb = bytes_recv as f64 / 1_048_576.0;
-
-    let throughput_sent = sent_mb / total_secs;
-    let throughput_recv = recv_mb / total_secs;
-
-    let sent_mb_str = format!("{:.2}", sent_mb).magenta();
-    let throughput_sent_str = format!("{:.2}", throughput_sent).yellow();
-    let recv_mb_str = format!("{:.2}", recv_mb).cyan();
-    let throughput_recv_str = format!("{:.2}", throughput_recv).yellow();
-
-    println!(
-        "📤 Transferência:   {} MB totais ({} MB/s)",
-        sent_mb_str, throughput_sent_str
-    );
-    println!(
-        "📥 Recebimento:     {} MB totais ({} MB/s)",
-        recv_mb_str, throughput_recv_str
-    );
-    println!("\n{}", "-------------------------".bright_black());
-
-    println!("\n{}", "📈 EFICIÊNCIA DO CANHÃO".bold().bright_white());
-
-    if let Some(target) = target_rps {
-        let efficiency = (actual_rps / target as f64) * 100.0;
-        let rps_str = format!("{:.2}", actual_rps).yellow();
-        println!("RPS Alvo:      {}", target.to_string().cyan());
-        println!("RPS Real:      {} ({:.1}%)", rps_str, efficiency);
-    } else {
-        println!(
-            "RPS Médio:     {} req/s",
-            format!("{:.2}", actual_rps).yellow()
-        );
-    }
-
-    println!("\n{}", "-------------------------".bright_black());
-    println!("Teste finalizado em {}s", total.as_secs());
-}
-
-fn print_banner() {
-    let banner = r#"
-      _____          _   _ _   _  ____  _   _ 
-     / ____|   /\   | \ | | \ | |/ __ \| \ | |
-    | |       /  \  |  \| |  \| | |  | |  \| |
-    | |      / /\ \ | . ` | . ` | |  | | . ` |
-    | |____ / ____ \| |\  | |\  | |__| | |\  |
-     \_____/_/    \_\_| \_|_| \_|\____/|_| \_|
-    "#;
-    println!("{}", banner.bright_red().bold());
-    println!(
-        "{}",
-        "--- The High-Velocity Load Tester ---"
-            .bright_black()
-            .italic()
-    );
-    println!();
 }
 
 fn update() -> Result<(), Box<dyn std::error::Error>> {
