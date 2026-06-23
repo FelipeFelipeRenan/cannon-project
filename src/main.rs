@@ -22,7 +22,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Extrai a URL ou mata o processo de forma graciosa
     let url_str = cannon::security::url_validator::validate_and_extract(&args.url);
     // Transforma os percentis da CLI para a escala matemática do HdrHistogram
-    let parsed_percentiles: Vec<f64> = args.percentiles.iter().map(|p| p / 100.0).collect();
+    // Transforma os percentis da CLI para a escala matemática do HdrHistogram
+    let parsed_percentiles: Vec<f64> = args
+        .percentiles
+        .split(',')
+        .filter_map(|s| s.trim().parse::<f64>().ok())
+        .map(|p| p / 100.0)
+        .collect();
 
     let client = Arc::new(cannon::client::http::build_optimized_client(&args)?);
 
