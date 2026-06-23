@@ -1,13 +1,9 @@
 use super::parser::{Args, FileConfig};
 
-pub fn merge_with_yaml(args: &mut Args) {
+pub fn merge_with_yaml(args: &mut Args) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(config_path) = &args.config {
-        let yaml_str = std::fs::read_to_string(config_path)
-            .unwrap_or_else(|_| panic!("❌ Erro: Não foi possível ler o arquivo {}", config_path));
-
-        let conf: FileConfig = serde_yaml::from_str(&yaml_str)
-            .unwrap_or_else(|e| panic!("❌ Erro no formato YAML: {}", e));
-
+        let yaml_str = std::fs::read_to_string(config_path)?;
+        let conf: FileConfig = serde_yaml::from_str(&yaml_str)?;
         // Regra de Ouro: O YAML sobrepõe os valores padrão da CLI
         if conf.url.is_some() {
             args.url = conf.url;
@@ -54,4 +50,6 @@ pub fn merge_with_yaml(args: &mut Args) {
             args.headers = yaml_headers;
         }
     }
+
+    Ok(())
 }

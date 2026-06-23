@@ -1,3 +1,6 @@
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use cannon::args::parser::Args;
 use cannon::report::cli::{generate_html_report, print_banner, print_summary, to_ms, FinalReport};
 use clap::Parser;
@@ -17,11 +20,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // Se o utilizador passou um ficheiro YAML, fazemos o merge com a CLI
-    cannon::args::config::merge_with_yaml(&mut args);
-    // Extrai a URL ou mata o processo de forma graciosa
+    // Se o utilizador passou um ficheiro YAML, fazemos o merge com tratamento de erro
+    if let Err(e) = cannon::args::config::merge_with_yaml(&mut args) {
+        eprintln!(
+            "{} Falha ao carregar configuração YAML: {}",
+            "❌ Erro:".red().bold(),
+            e
+        );
+        std::process::exit(1);
+    } // Extrai a URL ou mata o processo de forma graciosa
     let url_str = cannon::security::url_validator::validate_and_extract(&args.url);
-    // Transforma os percentis da CLI para a escala matemática do HdrHistogram
     // Transforma os percentis da CLI para a escala matemática do HdrHistogram
     let parsed_percentiles: Vec<f64> = args
         .percentiles
