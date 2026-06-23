@@ -1,4 +1,4 @@
-use crate::payload::process_payload;
+use crate::payload::generator::process_payload;
 use reqwest::Client;
 use std::sync::Arc;
 use tokio::sync::mpsc;

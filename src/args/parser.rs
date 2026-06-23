@@ -80,7 +80,7 @@ pub struct Args {
         default_value = "50,95,99",
         help = "Percentis for the report (ex: 50,95,99,99.9)"
     )]
-    pub percentiles: String,
+    pub percentiles: Vec<f64>,
 }
 
 #[derive(Deserialize, Debug, Default)]
