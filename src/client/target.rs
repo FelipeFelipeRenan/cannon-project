@@ -131,12 +131,25 @@ impl TargetClient for TcpTarget {
         let start = std::time::Instant::now();
         match TcpStream::connect(&self.address).await {
             Ok(mut stream) => {
-                if let Err(e) = stream.write_all(payload).await {
+                // 1. Injetamos a quebra de linha real (0x0A) se não existir
+                let mut final_payload = payload.to_vec();
+                if !final_payload.ends_with(b"\n") {
+                    final_payload.push(b'\n');
+                }
+
+                // 2. Dispara os bytes na rede
+                if let Err(e) = stream.write_all(&final_payload).await {
                     return TargetResult::fail(start.elapsed(), e.to_string());
                 }
+
+                // 3. Força o envio do buffer do SO imediatamente
+                let _ = stream.flush().await;
+
+                // 4. Aguarda o ACK do Go
                 let mut buffer = [0; 1];
                 let _ = stream.read(&mut buffer).await;
-                TargetResult::success(start.elapsed(), payload.len() as u64, 1)
+
+                TargetResult::success(start.elapsed(), final_payload.len() as u64, 1)
             }
             Err(e) => TargetResult::fail(start.elapsed(), e.to_string()),
         }
