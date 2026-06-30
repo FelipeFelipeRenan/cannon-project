@@ -81,6 +81,9 @@ pub struct Args {
         help = "Percentis for the report (ex: 50,95,99,99.9)"
     )]
     pub percentiles: String,
+
+    #[arg(long, help = "Protocol mode: 'http' or 'tcp'", default_value = "http")]
+    pub mode: String,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -99,6 +102,7 @@ pub struct FileConfig {
     pub csv: Option<String>,
     pub http2: Option<bool>,
     pub connect_timeout: Option<u64>,
+    pub mode: Option<String>,
 }
 
 #[cfg(test)]

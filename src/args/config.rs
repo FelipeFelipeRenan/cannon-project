@@ -49,6 +49,9 @@ pub fn merge_with_yaml(args: &mut Args) -> Result<(), Box<dyn std::error::Error>
             yaml_headers.append(&mut args.headers);
             args.headers = yaml_headers;
         }
+        if let Some(mode) = conf.mode {
+            args.mode = mode;
+        }
     }
 
     Ok(())

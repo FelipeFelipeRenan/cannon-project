@@ -28,8 +28,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             e
         );
         std::process::exit(1);
-    } // Extrai a URL ou mata o processo de forma graciosa
-    let url_str = cannon::security::url_validator::validate_and_extract(&args.url);
+    }
+
+    // Validação de segurança condicional: ignora a exigência de HTTP se for modo TCP
+    let url_str = if args.mode.to_lowercase() == "tcp" {
+        args.url
+            .clone()
+            .expect("❌ Erro: The address (IP:Port) from the target is required!")
+    } else {
+        cannon::security::url_validator::validate_and_extract(&args.url)
+    };
+
     // Transforma os percentis da CLI para a escala matemática do HdrHistogram
     let parsed_percentiles: Vec<f64> = args
         .percentiles
@@ -40,17 +49,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Arc::new(cannon::client::http::build_optimized_client(&args)?);
 
-    let url = Arc::new(url_str);
-    let headers = Arc::new(args.headers.clone());
-
     let buffer_size = std::cmp::min(args.workers as usize, 10_000).max(1);
-
-    // change to a fix size like 10_000
-    let (tx, mut rx) = mpsc::channel(buffer_size);
 
     print_banner();
 
-    println!("🎯 Alvo: {}", url.bright_cyan().bold());
+    // CORREÇÃO 1: Usar url_str aqui
+    println!("🎯 Alvo: {}", url_str.bright_cyan().bold());
     println!(
         "🚀 {}",
         format!(
@@ -65,21 +69,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let start_test = Instant::now();
 
+    // 1. O canal MPSC agora trafega o TargetResult
+    let (tx, mut rx) = mpsc::channel::<cannon::client::target::TargetResult>(buffer_size);
+
     let body_arc = args.body.clone().map(Arc::new);
     let expect_arc = args.expect.clone().map(Arc::new);
 
-    // Inicia o motor em background
+    // 2 e 3. Montamos o "Cartucho" baseado no protocolo escolhido e injetamos na Trait
+    let target: Arc<dyn cannon::client::target::TargetClient> = if args.mode.to_lowercase() == "tcp"
+    {
+        // Limpa o prefixo caso o utilizador tenha copiado a URL HTTP por engano
+        let clean_addr = url_str.replace("http://", "").replace("https://", "");
+
+        Arc::new(cannon::client::target::TcpTarget {
+            address: clean_addr,
+        })
+    } else {
+        Arc::new(cannon::client::target::HttpTarget {
+            client: (*client).clone(),
+            url: url_str.clone(),
+            method: reqwest::Method::from_bytes(args.method.as_bytes())
+                .unwrap_or(reqwest::Method::GET),
+            headers: Arc::new(args.headers.clone()),
+            expected_body: expect_arc,
+        })
+    };
+
+    // 4. Inicia o motor em background. O Motor não sabe o que é HTTP.
     tokio::spawn(cannon::engine::worker::run_workers(
         args.count,
         args.workers,
-        url.clone(),
-        reqwest::Method::from_bytes(args.method.as_bytes()).unwrap(),
         body_arc,
-        headers,
-        client,
-        expect_arc,
         tx,
         args.rps,
+        target,
     ));
 
     // Configura UI e Métricas
@@ -97,11 +120,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let pb = ProgressBar::new(args.count as u64);
     pb.set_style(
-    ProgressStyle::default_bar()
-        .template("{spinner:.bold.green} [{elapsed_precise}] {bar:40.magenta/blue} {pos:>7}/{len:7} {msg}")
-        .unwrap()
-        .progress_chars("━╾─"), // Gradiente de blocos Unicode
-);
+        ProgressStyle::default_bar()
+            .template("{spinner:.bold.green} [{elapsed_precise}] {bar:40.magenta/blue} {pos:>7}/{len:7} {msg}")
+            .unwrap()
+            .progress_chars("━╾─"), // Gradiente de blocos Unicode
+    );
 
     println!(
         "{}",
@@ -121,57 +144,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         tokio::select! {
-                result = rx.recv() => {
-                    match result {
-                        Some(res) => {
-                            if let Some(w) = &mut csv_writer {
+            result = rx.recv() => {
+                match result {
+                    Some(res) => {
+                        if let Some(w) = &mut csv_writer {
                             let ts = start_test.elapsed().as_millis().to_string();
                             let status = res.status_code.map(|c: u16| c.to_string()).unwrap_or_else(|| "N/A".to_string());
                             let lat = res.duration.as_millis().to_string();
                             let err = res.error.clone().unwrap_or_default();
                             let _ = w.write_record(&[ts, status, lat, err]);
                         }
-                            pb.inc(1);
+                        pb.inc(1);
 
-                            total_bytes_sent += res.bytes_sent;
-                            total_bytes_received += res.bytes_received;
+                        total_bytes_sent += res.bytes_sent;
+                        total_bytes_received += res.bytes_received;
 
-                            let elapsed = start_test.elapsed().as_secs_f64();
-                            if elapsed > 0.1 {
-                                let total_reqs = success_count + failure_count;
-                                if total_reqs % 25 == 0 && elapsed > 0.1 {
-                                    let rps = total_reqs as f64 / elapsed;
-                                     pb.set_message(format!("| ⚡ {:.1} RPS", rps));
-        }
-
+                        let elapsed = start_test.elapsed().as_secs_f64();
+                        if elapsed > 0.1 {
+                            let total_reqs = success_count + failure_count;
+                            if total_reqs % 25 == 0 && elapsed > 0.1 {
+                                let rps = total_reqs as f64 / elapsed;
+                                 pb.set_message(format!("| ⚡ {:.1} RPS", rps));
                             }
+                        }
 
+                        if let Some(code) = res.status_code {
+                            *status_counts.entry(code).or_insert(0) += 1;
+                        }
 
-                            if let Some(code) = res.status_code {
-                                *status_counts.entry(code).or_insert(0) += 1;
-                            }
-
-                            if res.success {
-                                success_count += 1;
-                                let _ = hist.record(res.duration.as_micros() as u64);
-                            } else {
-                                failure_count += 1;
-                            }
-                            if let Some(err_msg) = res.error{
-                                *error_counts.entry(err_msg).or_insert(0) += 1;
-                            }
-                            if !res.assertion_success {
-                                assertion_failures += 1;
-                            }
-                        },
-                        None => break,
-                    }
-                }
-                _ = tokio::signal::ctrl_c() => {
-                    println!("\n\n{}", "⚠️ Interrupção detectada! Preparando relatório parcial...".yellow().bold());
-                    break;
+                        if res.success {
+                            success_count += 1;
+                            let _ = hist.record(res.duration.as_micros() as u64);
+                        } else {
+                            failure_count += 1;
+                        }
+                        if let Some(err_msg) = res.error{
+                            *error_counts.entry(err_msg).or_insert(0) += 1;
+                        }
+                        if !res.assertion_success {
+                            assertion_failures += 1;
+                        }
+                    },
+                    None => break,
                 }
             }
+            _ = tokio::signal::ctrl_c() => {
+                println!("\n\n{}", "⚠️ Interrupção detectada! Preparando relatório parcial...".yellow().bold());
+                break;
+            }
+        }
     }
 
     pb.finish_with_message("Concluído");
@@ -217,7 +238,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Exportação de Dados (JSON / HTML)
     if args.output.is_some() || args.html.is_some() {
         let report = FinalReport {
-            target: url.to_string(),
+            target: url_str.clone(), // CORREÇÃO 3: Usar o url_str aqui pro JSON/HTML
             total_requests: args.count,
             concurrency: args.workers,
             successes: success_count,
@@ -272,12 +293,12 @@ fn update() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let status = self_update::backends::github::Update::configure()
-        .repo_owner("FelipeFelipeRenan") //
-        .repo_name("cannon-project") //
-        .bin_name("cannon") // Nome do binário local
-        .target(target) // Força a busca pelo asset que termina com este target
-        .show_download_progress(true) //
-        .current_version(env!("CARGO_PKG_VERSION")) //
+        .repo_owner("FelipeFelipeRenan")
+        .repo_name("cannon-project")
+        .bin_name("cannon")
+        .target(target)
+        .show_download_progress(true)
+        .current_version(env!("CARGO_PKG_VERSION"))
         .build()?
         .update()?;
 
@@ -285,12 +306,12 @@ fn update() -> Result<(), Box<dyn std::error::Error>> {
         println!(
             "✅ Atualizado com sucesso para a versão {}",
             status.version()
-        ); //
+        );
     } else {
         println!(
             "✨ Você já está na versão mais recente: {}",
             status.version()
-        ); //
+        );
     }
 
     Ok(())
