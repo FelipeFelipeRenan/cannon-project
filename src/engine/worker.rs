@@ -1,4 +1,6 @@
-use crate::client::target::{TargetClient, TargetResult};
+// src/engine/worker.rs
+
+use crate::client::target::{Target, TargetResult};
 use crate::payload::generator::process_payload;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -8,9 +10,9 @@ pub async fn run_workers(
     count: u32,
     workers: u32,
     body: Option<Arc<String>>,
-    tx: mpsc::Sender<TargetResult>, // Agora envia o TargetResult diretamente
+    tx: mpsc::Sender<TargetResult>,
     rps: Option<u32>,
-    target: Arc<dyn TargetClient>, // A MÁGICA DA ABSTRAÇÃO
+    target: Arc<Target>, // 🎯 MUDANÇA: Agora é enum inline em vez de dyn trait
 ) {
     let (job_tx, async_job_rx) = async_channel::bounded::<()>(workers as usize);
     let mut handles = Vec::new();
@@ -23,14 +25,14 @@ pub async fn run_workers(
 
         let handle = tokio::spawn(async move {
             while rx.recv().await.is_ok() {
-                // 1. Gera os bytes do payload
+                // 1. Gera os bytes do payload (inlining otimizado)
                 let mut payload_bytes = Vec::new();
                 if let Some(b) = &body {
                     let processed = process_payload(b);
                     payload_bytes = processed.into_bytes();
                 }
 
-                // 2. Dispara contra o alvo (Não importa se é HTTP ou TCP)
+                // 2. Dispara contra o alvo (enum dispatch inline!)
                 let res = target.fire(&payload_bytes).await;
 
                 // 3. Envia o resultado para o main

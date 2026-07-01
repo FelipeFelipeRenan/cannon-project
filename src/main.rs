@@ -1,3 +1,5 @@
+// src/main.rs
+
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -47,7 +49,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|p| p / 100.0)
         .collect();
 
-    let client = Arc::new(cannon::client::http::build_optimized_client(&args)?);
+    // Build HTTP client uma única vez (reutilizado para recriar Arcs)
+    let http_client = cannon::client::http::build_optimized_client(&args)?;
 
     let buffer_size = std::cmp::min(args.workers as usize, 10_000).max(1);
 
@@ -69,42 +72,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let start_test = Instant::now();
 
-    // 1. O canal MPSC agora trafega o TargetResult
+    // 1. O canal MPSC agora trafega o TargetResult (enum inline!)
     let (tx, mut rx) = mpsc::channel::<cannon::client::target::TargetResult>(buffer_size);
 
     let body_arc = args.body.clone().map(Arc::new);
     let expect_arc = args.expect.clone().map(Arc::new);
 
-    // 2 e 3. Montamos o "Cartucho" baseado no protocolo escolhido e injetamos na Trait
-    let target: Arc<dyn cannon::client::target::TargetClient> = if args.mode.to_lowercase() == "tcp"
-    {
-        // Limpa o prefixo caso o utilizador tenha copiado a URL HTTP por engano
+    // 2. Cria o Target usando os factory methods (enum inline!)
+    let target: Arc<cannon::client::target::Target> = if args.mode.to_lowercase() == "tcp" {
         let clean_addr = url_str.replace("http://", "").replace("https://", "");
 
-        Arc::new(cannon::client::target::TcpTarget {
-            address: clean_addr,
-        })
+        // Aqui o expect() funciona porque new_tcp retorna Result
+        let tcp_target = cannon::client::target::Target::new_tcp(&clean_addr, args.workers)
+            .await
+            .expect("❌ Failed to create TCP target");
+
+        Arc::new(tcp_target)
     } else {
-        Arc::new(cannon::client::target::HttpTarget {
-            client: (*client).clone(),
-            url: url_str.clone(),
-            method: reqwest::Method::from_bytes(args.method.as_bytes())
-                .unwrap_or(reqwest::Method::GET),
-            headers: Arc::new(args.headers.clone()),
-            expected_body: expect_arc,
-        })
+        // HTTP não retorna Result, é criado instantaneamente
+        let http_target = cannon::client::target::Target::new_http(
+            http_client.clone(), // <-- CORREÇÃO: Variável certa usada aqui
+            url_str.clone(),
+            reqwest::Method::from_bytes(args.method.as_bytes()).unwrap_or(reqwest::Method::GET),
+            Arc::new(args.headers.clone()),
+            expect_arc,
+        );
+
+        Arc::new(http_target)
     };
 
-    // 4. Inicia o motor em background. O Motor não sabe o que é HTTP.
+    // A linha 'let target = Arc::new(target);' foi DELETADA para evitar o Arc<Arc<Target>>
+
+    // 3. Inicia o motor em background. O Motor não sabe o que é HTTP (enum dispatch inline!)
     tokio::spawn(cannon::engine::worker::run_workers(
         args.count,
         args.workers,
         body_arc,
         tx,
         args.rps,
-        target,
+        target, // Agora recebe Arc<Target> perfeitamente!
     ));
-
     // Configura UI e Métricas
     let mut success_count = 0;
     let mut failure_count = 0;
