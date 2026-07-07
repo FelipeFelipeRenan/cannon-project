@@ -37,4 +37,6 @@ uuid = { version = "1.23.3", features = ["v4"] }
 
 self_update = { version = "0.42.0", default-features = false, features = ["archive-tar", "archive-zip", "rustls", "zip", "tar"] }
 async-trait = "0.1.89"
+itoa = "1.0.18"
+fastrand = "2.4.1"
 

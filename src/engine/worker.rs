@@ -1,7 +1,7 @@
 // src/engine/worker.rs
 
 use crate::client::target::{Target, TargetResult};
-use crate::payload::generator::process_payload;
+use crate::payload::generator::PayloadTemplate;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -9,33 +9,42 @@ use tokio::sync::mpsc;
 pub async fn run_workers(
     count: u32,
     workers: u32,
-    body: Option<Arc<String>>,
+    template: Option<Arc<PayloadTemplate>>, // 🚀 Novo motor de templates (Texto/Binário)
     tx: mpsc::Sender<TargetResult>,
     rps: Option<u32>,
-    target: Arc<Target>, // 🎯 MUDANÇA: Agora é enum inline em vez de dyn trait
+    target: Arc<Target>,
 ) {
     let (job_tx, async_job_rx) = async_channel::bounded::<()>(workers as usize);
     let mut handles = Vec::new();
 
     for _ in 0..workers {
-        let body = body.clone();
+        let template = template.clone();
         let tx = tx.clone();
         let rx = async_job_rx.clone();
         let target = target.clone();
 
         let handle = tokio::spawn(async move {
+            // 🚀 O SEGREDO ESTÁ AQUI: Aloca memória UMA ÚNICA VEZ antes do loop começar
+            let mut payload_buffer = Vec::with_capacity(1024);
+
+            // src/engine/worker.rs (trecho do loop)
+
             while rx.recv().await.is_ok() {
-                // 1. Gera os bytes do payload (inlining otimizado)
-                let mut payload_bytes = Vec::new();
-                if let Some(b) = &body {
-                    let processed = process_payload(b);
-                    payload_bytes = processed.into_bytes();
+                // Renderiza o template reciclando o buffer
+                if let Some(tpl) = &template {
+                    tpl.render(&mut payload_buffer);
                 }
 
-                // 2. Dispara contra o alvo (enum dispatch inline!)
-                let res = target.fire(&payload_bytes).await;
+                // 🎯 CORREÇÃO: Força o tipo explícito &[u8] usando as_slice()
+                let payload_ref: &[u8] = if template.is_some() {
+                    payload_buffer.as_slice()
+                } else {
+                    &[]
+                };
 
-                // 3. Envia o resultado para o main
+                // Dispara contra o alvo repassando a referência
+                let res = target.fire(payload_ref).await;
+
                 let _ = tx.send(res).await;
             }
         });

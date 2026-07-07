@@ -75,7 +75,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. O canal MPSC agora trafega o TargetResult (enum inline!)
     let (tx, mut rx) = mpsc::channel::<cannon::client::target::TargetResult>(buffer_size);
 
-    let body_arc = args.body.clone().map(Arc::new);
+    // 🎯 CORREÇÃO: Usa o novo interpretador de Templates em vez de String pura
+    let template_arc = args
+        .body
+        .clone()
+        .map(|b| cannon::payload::generator::PayloadTemplate::parse(&b));
     let expect_arc = args.expect.clone().map(Arc::new);
 
     // 2. Cria o Target usando os factory methods (enum inline!)
@@ -91,7 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         // HTTP não retorna Result, é criado instantaneamente
         let http_target = cannon::client::target::Target::new_http(
-            http_client.clone(), // <-- CORREÇÃO: Variável certa usada aqui
+            http_client.clone(),
             url_str.clone(),
             reqwest::Method::from_bytes(args.method.as_bytes()).unwrap_or(reqwest::Method::GET),
             Arc::new(args.headers.clone()),
@@ -101,16 +105,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(http_target)
     };
 
-    // A linha 'let target = Arc::new(target);' foi DELETADA para evitar o Arc<Arc<Target>>
-
-    // 3. Inicia o motor em background. O Motor não sabe o que é HTTP (enum dispatch inline!)
+    // 3. Inicia o motor em background
     tokio::spawn(cannon::engine::worker::run_workers(
         args.count,
         args.workers,
-        body_arc,
+        template_arc, // 🎯 CORREÇÃO: Passa o template_arc pré-compilado para os workers
         tx,
         args.rps,
-        target, // Agora recebe Arc<Target> perfeitamente!
+        target,
     ));
     // Configura UI e Métricas
     let mut success_count = 0;

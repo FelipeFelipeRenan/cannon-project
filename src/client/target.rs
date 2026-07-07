@@ -148,16 +148,19 @@ impl Target {
 
             Target::Tcp { pool_tx, pool_rx } => {
                 if let Ok(mut stream) = pool_rx.recv().await {
+                    // 1. Escreve APENAS os bytes puros do template. Sem \n, sem magia.
                     if let Err(e) = stream.write_all(payload).await {
                         return TargetResult::fail(start.elapsed(), e.to_string());
                     }
-                    if payload.last() != Some(&b'\n') {
-                        let _ = stream.write_all(b"\n").await;
-                    }
                     let _ = stream.flush().await;
 
+                    // 2. Lê exatamente o ACK de 1 byte de resposta do Goruptor
                     let mut buffer = [0; 1];
-                    let _ = stream.read(&mut buffer).await;
+                    if let Err(e) = stream.read_exact(&mut buffer).await {
+                        return TargetResult::fail(start.elapsed(), e.to_string());
+                    }
+
+                    // 3. Devolve pro Pool
                     let _ = pool_tx.send(stream).await;
 
                     TargetResult::success(start.elapsed(), payload.len() as u64, 1)
