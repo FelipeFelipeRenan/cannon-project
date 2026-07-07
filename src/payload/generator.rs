@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
 pub enum Endian {
@@ -17,7 +18,15 @@ pub enum BinaryType {
 #[derive(Clone)]
 pub enum Chunk {
     StaticText(Vec<u8>),
+
+    // Geradores de Texto (Para HTTP/JSON)
     TextRandomNumber,
+    TextUuid,
+    TextEmail,
+    TextUsername,
+    TextTimestamp,
+
+    // Geradores Binários (Para TCP)
     BinaryRandomNumber(BinaryType),
     BinaryFixedValue { value: u64, ty: BinaryType },
 }
@@ -29,28 +38,32 @@ pub struct PayloadTemplate {
 impl PayloadTemplate {
     pub fn parse(template: &str) -> Arc<Self> {
         let mut chunks = Vec::new();
+        let mut remaining = template;
 
-        // Se o template contém definições explícitas de tipos binários, ativa o parser avançado
-        if template.contains("{{number:") || template.contains("{{value:") {
-            let mut remaining = template;
+        // O Parser unificado agora varre a string em busca de qualquer tag {{ ... }}
+        while let Some(start_idx) = remaining.find("{{") {
+            if start_idx > 0 {
+                chunks.push(Chunk::StaticText(
+                    remaining.as_bytes()[..start_idx].to_vec(),
+                ));
+            }
 
-            while let Some(start_idx) = remaining.find("{{") {
-                if start_idx > 0 {
-                    // Texto estático: Fatiamos os bytes DIRETAMENTE como o Clippy mandou
-                    chunks.push(Chunk::StaticText(
-                        remaining.as_bytes()[..start_idx].to_vec(),
-                    ));
-                }
+            let end_idx = remaining
+                .find("}}")
+                .expect("Sintaxe inválida: tag não fechada");
+            let tag = &remaining[start_idx + 2..end_idx];
 
-                let end_idx = remaining
-                    .find("}}")
-                    .expect("Sintaxe inválida: tag não fechada");
-                let tag = &remaining[start_idx + 2..end_idx];
-
-                if tag.starts_with("number:") {
+            match tag {
+                "number" => chunks.push(Chunk::TextRandomNumber),
+                "uuid" => chunks.push(Chunk::TextUuid),
+                "email" => chunks.push(Chunk::TextEmail),
+                "username" => chunks.push(Chunk::TextUsername),
+                "timestamp" => chunks.push(Chunk::TextTimestamp),
+                _ if tag.starts_with("number:") => {
                     let type_str = tag.strip_prefix("number:").unwrap();
                     chunks.push(Chunk::BinaryRandomNumber(Self::parse_binary_type(type_str)));
-                } else if tag.starts_with("value:") {
+                }
+                _ if tag.starts_with("value:") => {
                     let parts: Vec<&str> = tag.strip_prefix("value:").unwrap().split(':').collect();
                     let val = parts[0].parse::<u64>().unwrap_or(0);
                     let type_str = parts.get(1).copied().unwrap_or("u8");
@@ -59,24 +72,17 @@ impl PayloadTemplate {
                         ty: Self::parse_binary_type(type_str),
                     });
                 }
-
-                remaining = &remaining[end_idx + 2..];
-            }
-
-            if !remaining.is_empty() {
-                chunks.push(Chunk::StaticText(remaining.as_bytes().to_vec()));
-            }
-        } else {
-            // Fallback para o modo Texto puro (HTTP tradicional / strings sobre TCP)
-            let parts: Vec<&str> = template.split("{{number}}").collect();
-            for (i, part) in parts.iter().enumerate() {
-                if !part.is_empty() {
-                    chunks.push(Chunk::StaticText(part.as_bytes().to_vec()));
-                }
-                if i < parts.len() - 1 {
-                    chunks.push(Chunk::TextRandomNumber);
+                _ => {
+                    // Fallback se a tag não for reconhecida, trata como texto estático
+                    chunks.push(Chunk::StaticText(format!("{{{{{}}}}}", tag).into_bytes()));
                 }
             }
+
+            remaining = &remaining[end_idx + 2..];
+        }
+
+        if !remaining.is_empty() {
+            chunks.push(Chunk::StaticText(remaining.as_bytes().to_vec()));
         }
 
         Arc::new(Self { chunks })
@@ -102,14 +108,55 @@ impl PayloadTemplate {
         for chunk in &self.chunks {
             match chunk {
                 Chunk::StaticText(bytes) => buffer.extend_from_slice(bytes),
+
+                // --- INJEÇÕES HTTP / TEXTO ZERO-COPY ---
                 Chunk::TextRandomNumber => {
-                    let num = fastrand::u32(1..=9999);
+                    let num = fastrand::u32(1..=999999);
                     let mut num_buf = itoa::Buffer::new();
                     buffer.extend_from_slice(num_buf.format(num).as_bytes());
                 }
+                Chunk::TextTimestamp => {
+                    let now = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis();
+                    let mut num_buf = itoa::Buffer::new();
+                    buffer.extend_from_slice(num_buf.format(now).as_bytes());
+                }
+                Chunk::TextUsername => {
+                    buffer.extend_from_slice(b"user_");
+                    let num = fastrand::u32(1000..=99999);
+                    let mut num_buf = itoa::Buffer::new();
+                    buffer.extend_from_slice(num_buf.format(num).as_bytes());
+                }
+                Chunk::TextEmail => {
+                    buffer.extend_from_slice(b"test_");
+                    let num = fastrand::u32(1000..=99999);
+                    let mut num_buf = itoa::Buffer::new();
+                    buffer.extend_from_slice(num_buf.format(num).as_bytes());
+                    buffer.extend_from_slice(b"@loadtest.com");
+                }
+                Chunk::TextUuid => {
+                    // Pseudo-UUID ultra rápido (Garante formato sem custo de criptografia pesada)
+                    let p1 = fastrand::u32(0..=0xFFFFFFFF);
+                    let p2 = fastrand::u16(0..=0xFFFF);
+                    let p3 = fastrand::u16(0..=0x0FFF) | 0x4000; // Versão 4
+                    let p4 = fastrand::u16(0..=0x3FFF) | 0x8000; // Variante
+                    let p5_1 = fastrand::u32(0..=0xFFFFFFFF);
+                    let p5_2 = fastrand::u16(0..=0xFFFF);
+
+                    // Formata direto para bytes ASCII no buffer usando um macete de macros
+                    use std::io::Write;
+                    let _ = write!(
+                        buffer,
+                        "{:08x}-{:04x}-{:04x}-{:04x}-{:08x}{:04x}",
+                        p1, p2, p3, p4, p5_1, p5_2
+                    );
+                }
+
+                // --- INJEÇÕES TCP BINÁRIAS ZERO-COPY ---
                 Chunk::BinaryRandomNumber(ty) => {
-                    let num = fastrand::u64(1..=999999);
-                    Self::write_binary_value(buffer, num, ty);
+                    Self::write_binary_value(buffer, fastrand::u64(1..=999999), ty);
                 }
                 Chunk::BinaryFixedValue { value, ty } => {
                     Self::write_binary_value(buffer, *value, ty);
