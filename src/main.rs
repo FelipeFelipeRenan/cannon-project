@@ -69,31 +69,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     println!("⏱️ Timeout: {}ms", args.timeout.to_string().yellow());
-
     let start_test = Instant::now();
 
-    // 1. O canal MPSC agora trafega o TargetResult (enum inline!)
-    let (tx, mut rx) = mpsc::channel::<cannon::client::target::TargetResult>(buffer_size);
-
-    // 🎯 CORREÇÃO: Usa o novo interpretador de Templates em vez de String pura
     let template_arc = args
         .body
         .clone()
         .map(|b| cannon::payload::generator::PayloadTemplate::parse(&b));
     let expect_arc = args.expect.clone().map(Arc::new);
 
-    // 2. Cria o Target usando os factory methods (enum inline!)
     let target: Arc<cannon::client::target::Target> = if args.mode.to_lowercase() == "tcp" {
         let clean_addr = url_str.replace("http://", "").replace("https://", "");
-
-        // Aqui o expect() funciona porque new_tcp retorna Result
         let tcp_target = cannon::client::target::Target::new_tcp(&clean_addr, args.workers)
             .await
             .expect("❌ Failed to create TCP target");
-
         Arc::new(tcp_target)
     } else {
-        // HTTP não retorna Result, é criado instantaneamente
         let http_target = cannon::client::target::Target::new_http(
             http_client.clone(),
             url_str.clone(),
@@ -101,126 +91,118 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arc::new(args.headers.clone()),
             expect_arc,
         );
-
         Arc::new(http_target)
     };
-
-    // 3. Inicia o motor em background
-    tokio::spawn(cannon::engine::worker::run_workers(
-        args.count,
-        args.workers,
-        template_arc, // 🎯 CORREÇÃO: Passa o template_arc pré-compilado para os workers
-        tx,
-        args.rps,
-        target,
-    ));
-    // Configura UI e Métricas
-    let mut success_count = 0;
-    let mut failure_count = 0;
-    let mut hist = Histogram::<u64>::new_with_bounds(1, 60_000_000, 3)?;
-
-    let mut status_counts = std::collections::HashMap::<u16, u64>::new();
-    let mut error_counts = std::collections::HashMap::<String, u64>::new();
-
-    let mut assertion_failures = 0;
-
-    let mut total_bytes_sent: u64 = 0;
-    let mut total_bytes_received: u64 = 0;
 
     let pb = ProgressBar::new(args.count as u64);
     pb.set_style(
         ProgressStyle::default_bar()
             .template("{spinner:.bold.green} [{elapsed_precise}] {bar:40.magenta/blue} {pos:>7}/{len:7} {msg}")
             .unwrap()
-            .progress_chars("━╾─"), // Gradiente de blocos Unicode
+            .progress_chars("━╾─"),
     );
-
     println!(
         "{}",
         "Pressione Ctrl+C para interromper e ver o relatório parcial".bright_black()
     );
 
-    // Prepara o escritor CSV se o argumento for passado
-    let mut csv_writer = match &args.csv {
-        Some(path) => {
-            let mut w = csv::Writer::from_path(path).expect("❌ Erro ao criar arquivo CSV");
-            w.write_record(["tempo_relativo_ms", "status", "latencia_ms", "erro"])
-                .unwrap();
-            Some(w)
-        }
-        None => None,
-    };
+    // Instancia os Atomics
+    use std::sync::atomic::Ordering;
+    let shared_metrics = Arc::new(cannon::engine::worker::SharedMetrics::default());
 
-    loop {
+    // Configuração do CSV Assíncrono
+    let mut csv_tx = None;
+    if let Some(path) = &args.csv {
+        let (tx, mut rx) = mpsc::channel::<cannon::engine::worker::CsvRecord>(buffer_size);
+        csv_tx = Some(tx);
+        let path_clone = path.clone();
+
+        // Spawn Background Worker pro I/O de disco
+        tokio::spawn(async move {
+            if let Ok(mut w) = csv::Writer::from_path(&path_clone) {
+                let _ = w.write_record(["tempo_relativo_ms", "status", "latencia_ms", "erro"]);
+                while let Some(rec) = rx.recv().await {
+                    let _ =
+                        w.write_record(&[rec.relative_ms, rec.status, rec.latency_ms, rec.error]);
+                }
+                let _ = w.flush();
+            }
+        });
+    }
+
+    // Inicia o motor
+    let engine_handle = tokio::spawn(cannon::engine::worker::run_workers(
+        args.count,
+        args.workers,
+        template_arc,
+        args.rps,
+        target,
+        shared_metrics.clone(),
+        csv_tx,
+        start_test,
+    ));
+
+    // UI Loop (Puxa os dados dos Atomics a cada 500ms)
+    let mut last_total = 0;
+    let mut last_time = Instant::now();
+
+    while !engine_handle.is_finished() {
         tokio::select! {
-            result = rx.recv() => {
-                match result {
-                    Some(res) => {
-                        if let Some(w) = &mut csv_writer {
-                            let ts = start_test.elapsed().as_millis().to_string();
-                            let status = res.status_code.map(|c: u16| c.to_string()).unwrap_or_else(|| "N/A".to_string());
-                            let lat = res.duration.as_millis().to_string();
-                            let err = res.error.clone().unwrap_or_default();
-                            let _ = w.write_record(&[ts, status, lat, err]);
-                        }
-                        pb.inc(1);
+            _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {
+                let succ = shared_metrics.successes.load(Ordering::Relaxed);
+                let fail = shared_metrics.failures.load(Ordering::Relaxed);
+                let total = succ + fail;
 
-                        total_bytes_sent += res.bytes_sent;
-                        total_bytes_received += res.bytes_received;
+                pb.set_position(total);
 
-                        let elapsed = start_test.elapsed().as_secs_f64();
-                        if elapsed > 0.1 {
-                            let total_reqs = success_count + failure_count;
-                            if total_reqs % 25 == 0 && elapsed > 0.1 {
-                                let rps = total_reqs as f64 / elapsed;
-                                 pb.set_message(format!("| ⚡ {:.1} RPS", rps));
-                            }
-                        }
-
-                        if let Some(code) = res.status_code {
-                            *status_counts.entry(code).or_insert(0) += 1;
-                        }
-
-                        if res.success {
-                            success_count += 1;
-                            let _ = hist.record(res.duration.as_micros() as u64);
-                        } else {
-                            failure_count += 1;
-                        }
-                        if let Some(err_msg) = res.error{
-                            *error_counts.entry(err_msg).or_insert(0) += 1;
-                        }
-                        if !res.assertion_success {
-                            assertion_failures += 1;
-                        }
-                    },
-                    None => break,
+                let elapsed = last_time.elapsed().as_secs_f64();
+                if elapsed >= 0.1 && total > last_total {
+                    let rps = (total - last_total) as f64 / elapsed;
+                    pb.set_message(format!("| ⚡ {:.1} RPS", rps));
+                    last_total = total;
+                    last_time = Instant::now();
                 }
             }
             _ = tokio::signal::ctrl_c() => {
-                println!("\n\n{}", "⚠️ Interrupção detectada! Preparando relatório parcial...".yellow().bold());
+                println!("\n\n{}", "⚠️ Interrupção detectada! Aguardando workers...".yellow().bold());
                 break;
             }
         }
     }
 
+    let worker_results = engine_handle.await.unwrap_or_default();
     pb.finish_with_message("Concluído");
 
-    if let Some(mut w) = csv_writer {
-        let _ = w.flush();
-        println!(
-            "📊 Dados brutos exportados para {}!",
-            args.csv.as_ref().unwrap().bright_cyan()
-        );
+    if let Some(path) = &args.csv {
+        println!("📊 Dados brutos exportados para {}!", path.bright_cyan());
     }
 
-    let status_for_report = status_counts.clone();
-    let errors_for_report = error_counts.clone();
+    // Fusão dos relatórios locais (O Merge final)
+    let mut hist = Histogram::<u64>::new_with_bounds(1, 60_000_000, 3)?;
+    let mut status_counts = std::collections::HashMap::new();
+    let mut error_counts = std::collections::HashMap::new();
+    let mut assertion_failures = 0;
+
+    for w in worker_results {
+        let _ = hist.add(w.histogram);
+        for (k, v) in w.status_counts {
+            *status_counts.entry(k).or_insert(0) += v;
+        }
+        for (k, v) in w.error_counts {
+            *error_counts.entry(k).or_insert(0) += v;
+        }
+        assertion_failures += w.assertion_failures;
+    }
+
+    let success_count = shared_metrics.successes.load(Ordering::Relaxed);
+    let failure_count = shared_metrics.failures.load(Ordering::Relaxed);
+    let total_bytes_sent = shared_metrics.bytes_sent.load(Ordering::Relaxed);
+    let total_bytes_received = shared_metrics.bytes_received.load(Ordering::Relaxed);
+
     let total_secs = start_test.elapsed().as_secs_f64();
     let actual_rps = success_count as f64 / total_secs;
 
-    // Satisfatórias (<= 50ms) e Toleráveis (51ms a 200ms)
-    let t_us = args.apdex_t * 1000; // 50ms em microssegundos
+    let t_us = args.apdex_t * 1000;
     let satisfied = hist.count_between(0, t_us);
     let tolerating = hist.count_between(t_us + 1, t_us * 4);
     let apdex = if !hist.is_empty() {
@@ -229,20 +211,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         0.0
     };
 
-    // Impressão do Relatório
     print_summary(
         success_count,
         failure_count,
         &hist,
         start_test.elapsed(),
         args.rps,
-        status_counts,
-        error_counts,
+        status_counts.clone(),
+        error_counts.clone(),
         assertion_failures,
         total_bytes_sent,
         total_bytes_received,
         &parsed_percentiles,
     );
+
+    let status_for_report = status_counts.clone();
+    let errors_for_report = error_counts.clone();
 
     // Exportação de Dados (JSON / HTML)
     if args.output.is_some() || args.html.is_some() {
