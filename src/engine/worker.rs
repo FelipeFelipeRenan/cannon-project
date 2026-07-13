@@ -43,6 +43,7 @@ pub async fn run_workers(
     shared_metrics: Arc<SharedMetrics>,
     csv_tx: Option<mpsc::Sender<CsvRecord>>,
     start_time: Instant,
+    warmup_end: Instant,
 ) -> Vec<WorkerResult> {
     let (job_tx, async_job_rx) = async_channel::bounded::<()>(workers as usize);
     let mut handles = Vec::new();
@@ -75,10 +76,14 @@ pub async fn run_workers(
                 };
                 let res = target.fire(payload_ref).await;
 
+                let is_warmup = Instant::now() < warmup_end;
+
                 // 1. Atualiza Atomics Globais (Rápido, vai direto pra L1 Cache)
                 if res.success {
                     shared.successes.fetch_add(1, Ordering::Relaxed);
-                    let _ = local_hist.record(res.duration.as_micros() as u64);
+                    if !is_warmup {
+                        let _ = local_hist.record(res.duration.as_micros() as u64);
+                    }
                 } else {
                     shared.failures.fetch_add(1, Ordering::Relaxed);
                 }
@@ -89,6 +94,17 @@ pub async fn run_workers(
                     .bytes_received
                     .fetch_add(res.bytes_received, Ordering::Relaxed);
 
+                if !is_warmup {
+                    if let Some(code) = res.status_code {
+                        *local_status.entry(code).or_insert(0) += 1;
+                    }
+                    if let Some(err) = &res.error {
+                        *local_errors.entry(err.clone()).or_insert(0) += 1;
+                    }
+                    if !res.assertion_success {
+                        local_assert_failures += 1;
+                    }
+                }
                 // 2. Atualiza HashMaps Locais
                 if let Some(code) = res.status_code {
                     *local_status.entry(code).or_insert(0) += 1;

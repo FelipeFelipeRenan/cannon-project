@@ -84,6 +84,9 @@ pub struct Args {
 
     #[arg(long, help = "Protocol mode: 'http' or 'tcp'", default_value = "http")]
     pub mode: String,
+
+    #[arg(long, default_value_t = 0, help = "Warmup time in seconds")]
+    pub warmup: u64,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -103,6 +106,7 @@ pub struct FileConfig {
     pub http2: Option<bool>,
     pub connect_timeout: Option<u64>,
     pub mode: Option<String>,
+    pub warmup: u64,
 }
 
 #[cfg(test)]

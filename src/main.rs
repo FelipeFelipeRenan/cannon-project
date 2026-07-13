@@ -69,7 +69,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     println!("⏱️ Timeout: {}ms", args.timeout.to_string().yellow());
+
     let start_test = Instant::now();
+
+    let warmup_duration = std::time::Duration::from_secs(args.warmup);
+    let warmup_end = start_test + warmup_duration;
+
+    if args.warmup > 0 {
+        println!(
+            "🔥 Modo Warm-up ativado: Desprezando os primeiros {}s de métricas...",
+            args.warmup.to_string().yellow()
+        );
+    }
 
     let template_arc = args
         .body
@@ -140,6 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         shared_metrics.clone(),
         csv_tx,
         start_test,
+        warmup_end,
     ));
 
     // UI Loop (Puxa os dados dos Atomics a cada 500ms)
@@ -198,8 +210,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let failure_count = shared_metrics.failures.load(Ordering::Relaxed);
     let total_bytes_sent = shared_metrics.bytes_sent.load(Ordering::Relaxed);
     let total_bytes_received = shared_metrics.bytes_received.load(Ordering::Relaxed);
-
-    let total_secs = start_test.elapsed().as_secs_f64();
+    let actual_duration = start_test.elapsed();
+    let stable_duration = actual_duration
+        .checked_sub(warmup_duration)
+        .unwrap_or(actual_duration);
+    let total_secs = stable_duration.as_secs_f64();
     let actual_rps = success_count as f64 / total_secs;
 
     let t_us = args.apdex_t * 1000;

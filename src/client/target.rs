@@ -51,6 +51,7 @@ pub enum Target {
     Tcp {
         pool_tx: Sender<TcpStream>,
         pool_rx: Receiver<TcpStream>,
+        address: String,
     },
 }
 
@@ -87,7 +88,17 @@ impl Target {
         Ok(Self::Tcp {
             pool_tx: tx,
             pool_rx: rx,
+            address: address.to_string(),
         })
+    }
+
+    #[inline(always)]
+    fn trigger_reconnect(pool_tx: async_channel::Sender<TcpStream>, address: String) {
+        tokio::spawn(async move {
+            if let Ok(new_stream) = TcpStream::connect(&address).await {
+                let _ = pool_tx.send(new_stream).await;
+            }
+        });
     }
 
     // O compilador injeta esse match direto no loop do Worker!
@@ -146,21 +157,31 @@ impl Target {
                 }
             }
 
-            Target::Tcp { pool_tx, pool_rx } => {
+            Target::Tcp {
+                pool_tx,
+                pool_rx,
+                address,
+            } => {
                 if let Ok(mut stream) = pool_rx.recv().await {
                     // 1. Escreve APENAS os bytes puros do template. Sem \n, sem magia.
+                    // 1. Tenta escrever. Se falhar, a conexão caiu. Dispara a cura!
                     if let Err(e) = stream.write_all(payload).await {
-                        return TargetResult::fail(start.elapsed(), e.to_string());
+                        Self::trigger_reconnect(pool_tx.clone(), address.clone());
+                        return TargetResult::fail(start.elapsed(), format!("Broken Pipe: {}", e));
                     }
                     let _ = stream.flush().await;
 
-                    // 2. Lê exatamente o ACK de 1 byte de resposta do Goruptor
+                    // 2. Tenta ler o ACK. Se falhar, o alvo fechou a porta na nossa cara. Cura!
                     let mut buffer = [0; 1];
                     if let Err(e) = stream.read_exact(&mut buffer).await {
-                        return TargetResult::fail(start.elapsed(), e.to_string());
+                        Self::trigger_reconnect(pool_tx.clone(), address.clone());
+                        return TargetResult::fail(
+                            start.elapsed(),
+                            format!("Connection Reset: {}", e),
+                        );
                     }
 
-                    // 3. Devolve pro Pool
+                    // 3. Tudo perfeito. Devolve o socket intacto para o Pool.
                     let _ = pool_tx.send(stream).await;
 
                     TargetResult::success(start.elapsed(), payload.len() as u64, 1)
