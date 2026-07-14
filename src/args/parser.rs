@@ -87,6 +87,31 @@ pub struct Args {
 
     #[arg(long, default_value_t = 0, help = "Warmup time in seconds")]
     pub warmup: u64,
+
+    #[arg(
+        long,
+        help = "Salva as métricas atuais (p99 e RPS) num arquivo JSON de baseline"
+    )]
+    pub save_baseline: Option<String>,
+
+    #[arg(
+        long,
+        help = "Compara o teste atual com um baseline salvo e falha se piorar"
+    )]
+    pub compare_baseline: Option<String>,
+
+    #[arg(
+        long,
+        default_value_t = 5.0,
+        help = "Tolerância (em %) para regressão de latência"
+    )]
+    pub tolerance: f64,
+
+    #[arg(
+        long,
+        help = "Modo Deus: Amarra as threads do Tokio aos núcleos físicos (Pinning)"
+    )]
+    pub pin_threads: bool,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -107,6 +132,10 @@ pub struct FileConfig {
     pub connect_timeout: Option<u64>,
     pub mode: Option<String>,
     pub warmup: u64,
+    pub save_baseline: Option<String>,
+    pub compare_baseline: Option<String>,
+    pub tolerance: f64,
+    pub pin_threads: bool,
 }
 
 #[cfg(test)]

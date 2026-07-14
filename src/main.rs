@@ -9,44 +9,44 @@ use clap::Parser;
 use colored::Colorize;
 use hdrhistogram::Histogram;
 use indicatif::{ProgressBar, ProgressStyle};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
-// CPU PINNING (in case of using the cannon in a dedicated machine)
-/*CPU PINNING
-fn main() -> Result<(), Box<dyn std::error::Error>>{
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Lemos os argumentos antes de ligar o motor
+    let args = Args::parse();
 
-    let core_ids = core_affinity::get_core_ids().expect("Falha ao ler topologia do processador");
-    let core_count = core_ids.len();
+    if args.pin_threads {
+        let core_ids = core_affinity::get_core_ids().expect("❌ Falha ao ler a topologia da CPU");
+        let core_count = core_ids.len();
+        let core_idx = Arc::new(AtomicUsize::new(0));
 
-    println!("🧠 Topologia de CPU detectada: {} núcleos físicos.", core_count);
-    println!("⚙️  Aplicando Afinidade de CPU Estrita (Pinning) nas OS Threads...");
+        println!(
+            "CPU Pinning ativado: Aplicando Afinidade de CPU Estrita ({} núcleos)...",
+            core_count
+        );
 
-    let core_idx = Arc::new(AtomicUsize::new(0));
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(core_count)
+            .on_thread_start(move || {
+                let idx = core_idx.fetch_add(1, Ordering::SeqCst) % core_count;
+                let target_core = core_ids[idx];
+                let _ = core_affinity::set_for_current(target_core);
+            })
+            .build()?;
 
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(core_count)
-        .on_thread_start(move || {
-            let idx = core_idx.fetch_add(1, Ordering::SeqCst) % core_count;
-            let target_core = core_ids[idx];
-
-            if core_affinity::set_for_current(target_core){
-
-            }
-        }).build()?;
-
-        rt.block_on(async{
-            run_app().await
-        })
+        rt.block_on(async { run_app(args).await })
+    } else {
+        // Inicialização padrão (Deixa o SO decidir)
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(async { run_app(args).await })
+    }
 }
 
-and changes the main to async run_app
-*/
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let mut args = Args::parse();
 
     if args.update {
@@ -54,7 +54,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // Se o utilizador passou um ficheiro YAML, fazemos o merge com tratamento de erro
     if let Err(e) = cannon::args::config::merge_with_yaml(&mut args) {
         eprintln!(
             "{} Falha ao carregar configuração YAML: {}",
@@ -64,7 +63,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(1);
     }
 
-    // Validação de segurança condicional: ignora a exigência de HTTP se for modo TCP
     let url_str = if args.mode.to_lowercase() == "tcp" {
         args.url
             .clone()
@@ -73,7 +71,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cannon::security::url_validator::validate_and_extract(&args.url)
     };
 
-    // Transforma os percentis da CLI para a escala matemática do HdrHistogram
     let parsed_percentiles: Vec<f64> = args
         .percentiles
         .split(',')
@@ -81,14 +78,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|p| p / 100.0)
         .collect();
 
-    // Build HTTP client uma única vez (reutilizado para recriar Arcs)
     let http_client = cannon::client::http::build_optimized_client(&args)?;
 
     let buffer_size = std::cmp::min(args.workers as usize, 10_000).max(1);
 
     print_banner();
 
-    // CORREÇÃO 1: Usar url_str aqui
     println!("🎯 Alvo: {}", url_str.bright_cyan().bold());
     println!(
         "🚀 {}",
@@ -271,6 +266,72 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         total_bytes_received,
         &parsed_percentiles,
     );
+
+    let current_p99_ms = hist.value_at_percentile(99.0) as f64 / 1000.0;
+
+    if let Some(path) = &args.save_baseline {
+        let baseline_data = serde_json::json!({
+            "p99_ms": current_p99_ms,
+            "rps": actual_rps
+        });
+
+        if let Ok(json_str) = serde_json::to_string_pretty(&baseline_data) {
+            let _ = std::fs::write(path, json_str);
+            println!(
+                "\n💾 Baseline de performance salvo com sucesso em: {}",
+                path.bright_green()
+            );
+        }
+    }
+
+    if let Some(path) = &args.compare_baseline {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if let Ok(baseline) = serde_json::from_str::<serde_json::Value>(&content) {
+                let base_p99 = baseline["p99_ms"].as_f64().unwrap_or(0.0);
+
+                println!(
+                    "\n⚖️  {}",
+                    "ANÁLISE DE BASELINE (CI/CD)".bright_blue().bold()
+                );
+                println!("   P99 Histórico: {:.2}ms", base_p99);
+                println!("   P99 Atual:     {:.2}ms", current_p99_ms);
+
+                if current_p99_ms > base_p99 {
+                    let degradation = ((current_p99_ms - base_p99) / base_p99) * 100.0;
+                    println!(
+                        "   Variação:      +{} pior",
+                        format!("{:.2}%", degradation).yellow()
+                    );
+
+                    if degradation > args.tolerance {
+                        println!(
+                            "\n❌ {} Tolerância de {}% excedida. Abortando com erro...",
+                            "REGRESSÃO DE PERFORMANCE DETECTADA!".red().bold(),
+                            args.tolerance
+                        );
+                        std::process::exit(1);
+                    } else {
+                        println!(
+                            "\n✅ Regressão aceitável. Dentro da tolerância de {}%.",
+                            args.tolerance
+                        );
+                    }
+                } else {
+                    let improvement = ((base_p99 - current_p99_ms) / base_p99) * 100.0;
+                    println!(
+                        "   Variação:      -{} melhor",
+                        format!("{:.2}%", improvement).green()
+                    );
+                    println!("\n✅ Performance melhorou ou se manteve constante!");
+                }
+            }
+        } else {
+            println!(
+                "\n⚠️ Aviso: Arquivo de baseline '{}' não encontrado. Comparação ignorada.",
+                path.yellow()
+            );
+        }
+    }
 
     let status_for_report = status_counts.clone();
     let errors_for_report = error_counts.clone();
