@@ -13,6 +13,38 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
+// CPU PINNING (in case of using the cannon in a dedicated machine)
+/*CPU PINNING
+fn main() -> Result<(), Box<dyn std::error::Error>>{
+
+    let core_ids = core_affinity::get_core_ids().expect("Falha ao ler topologia do processador");
+    let core_count = core_ids.len();
+
+    println!("🧠 Topologia de CPU detectada: {} núcleos físicos.", core_count);
+    println!("⚙️  Aplicando Afinidade de CPU Estrita (Pinning) nas OS Threads...");
+
+    let core_idx = Arc::new(AtomicUsize::new(0));
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(core_count)
+        .on_thread_start(move || {
+            let idx = core_idx.fetch_add(1, Ordering::SeqCst) % core_count;
+            let target_core = core_ids[idx];
+
+            if core_affinity::set_for_current(target_core){
+
+            }
+        }).build()?;
+
+        rt.block_on(async{
+            run_app().await
+        })
+}
+
+and changes the main to async run_app
+*/
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = Args::parse();

@@ -39,4 +39,5 @@ self_update = { version = "0.42.0", default-features = false, features = ["archi
 async-trait = "0.1.89"
 itoa = "1.0.18"
 fastrand = "2.4.1"
+core_affinity = "0.8.3"
 
