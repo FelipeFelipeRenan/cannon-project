@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cannon - Painel de Telemetria</title>
+    <title>Cannon - Telemetry Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --bg: #0d1117; --card-bg: #161b22; --border: #30363d; --text: #c9d1d9; --blue: #58a6ff; --green: #3fb950; --red: #f85149; --yellow: #d29922; }
@@ -41,19 +41,19 @@
 <body>
     <div class="container">
         <div class="header-bar">
-            <h1>🚀 Telemetria Cannon</h1>
-            <button class="print-btn" onclick="window.print()">🖨️ Guardar PDF</button>
+            <h1>🚀 Cannon Telemetry</h1>
+            <button class="print-btn" onclick="window.print()">🖨️ Save PDF</button>
         </div>
-        <p class="subtitle">Análise Detalhada de Performance HTTP</p>
+        <p class="subtitle">Detailed Analisys of HTTP Performance</p>
         <div id="summary" class="grid"></div>
         <div class="charts-grid">
             <div class="chart-container"><canvas id="latencyChart"></canvas></div>
             <div class="chart-container"><canvas id="statusChart"></canvas></div>
         </div>
         <div id="errorsSection" class="errors-section">
-            <h3 style="color: var(--red); margin-top: 0;">⚠️ Registo de Falhas</h3>
+            <h3 style="color: var(--red); margin-top: 0;">⚠️ Failure Log</h3>
             <table id="errorsTable">
-                <thead><tr><th>Tipo de Erro</th><th>Ocorrências</th></tr></thead>
+                <thead><tr><th>Error Type</th><th>Occurrences</th></tr></thead>
                 <tbody></tbody>
             </table>
         </div>
@@ -65,20 +65,20 @@
         const tpRecv = (mbRecv / data.duration_secs).toFixed(2);
 
         let apdexColor = 'fail-text';
-        let apdexLabel = 'Inaceitável';
-        if (data.apdex_score >= 0.94) { apdexColor = 'success-text'; apdexLabel = 'Excelente'; }
-        else if (data.apdex_score >= 0.85) { apdexColor = 'success-text'; apdexLabel = 'Bom'; }
-        else if (data.apdex_score >= 0.70) { apdexColor = 'warn-text'; apdexLabel = 'Razoável'; }
-        else if (data.apdex_score >= 0.50) { apdexColor = 'warn-text'; apdexLabel = 'Pobre'; }
+        let apdexLabel = 'Unacceptable';
+        if (data.apdex_score >= 0.94) { apdexColor = 'success-text'; apdexLabel = 'Excellent'; }
+        else if (data.apdex_score >= 0.85) { apdexColor = 'success-text'; apdexLabel = 'Good'; }
+        else if (data.apdex_score >= 0.70) { apdexColor = 'warn-text'; apdexLabel = 'Reasonable'; }
+        else if (data.apdex_score >= 0.50) { apdexColor = 'warn-text'; apdexLabel = 'Poor'; }
 
         const summaryDiv = document.getElementById('summary');
         const metrics = [
-            { label: 'Alvo', value: data.target, cls: 'target-text' },
-            { label: 'Índice Apdex', value: data.apdex_score.toFixed(2) + ' (' + apdexLabel + ')', cls: apdexColor },
-            { label: 'RPS Real', value: data.actual_rps.toFixed(2) + ' req/s' },
-            { label: 'Download Máx', value: tpRecv + ' MB/s' },
-            { label: 'Sucessos', value: data.successes, cls: 'success-text' },
-            { label: 'Falhas', value: data.failures, cls: data.failures > 0 ? 'fail-text' : '' }
+            { label: 'Target', value: data.target, cls: 'target-text' },
+            { label: 'Apdex Index', value: data.apdex_score.toFixed(2) + ' (' + apdexLabel + ')', cls: apdexColor },
+            { label: 'Real RPS', value: data.actual_rps.toFixed(2) + ' req/s' },
+            { label: 'Download Max', value: tpRecv + ' MB/s' },
+            { label: 'Successes', value: data.successes, cls: 'success-text' },
+            { label: 'Failures', value: data.failures, cls: data.failures > 0 ? 'fail-text' : '' }
         ];
         
         metrics.forEach(m => {
@@ -91,9 +91,9 @@
         new Chart(document.getElementById('latencyChart').getContext('2d'), {
             type: 'bar',
             data: {
-                labels: ['Mínimo', 'Média', 'p50', 'p95', 'p99', 'Máximo'],
+                labels: ['Min', 'Mean', 'p50', 'p95', 'p99', 'Max'],
                 datasets: [{
-                    label: 'Latência (ms)',
+                    label: 'Latency (ms)',
                     data: [data.min_ms, data.avg_ms, data.p50_ms, data.p95_ms, data.p99_ms, data.max_ms],
                     backgroundColor: 'rgba(88, 166, 255, 0.7)',
                     borderColor: '#58a6ff',

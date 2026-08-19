@@ -47,7 +47,7 @@ pub fn to_ms(us: u64) -> f64 {
 }
 
 pub fn render_ascii_histogram(hist: &hdrhistogram::Histogram<u64>) {
-    println!("\n{}", "📊 DISTRIBUIÇÃO DE LATÊNCIA".bold().bright_white());
+    println!("\n{}", "📊 LATENCY DISTRIBUTION".bold().bright_white());
 
     let min = hist.min();
     let max = hist.max();
@@ -110,31 +110,29 @@ pub fn print_summary(
     percentiles: &[f64],
 ) {
     println!("\n{}", "--- 🏁 RELATÓRIO DO CANNON ---".bold().underline());
-    println!("Sucessos:     {}", successes);
-    println!("Falhas:       {}", failures);
+    println!("Successes:     {}", successes);
+    println!("Failures:       {}", failures);
 
     let mut metrics = Vec::new();
     if successes > 0 {
         let to_ms_str = |v| format!("{:.2}ms", to_ms(v));
 
         metrics.push(LatencyMetrics {
-            metric: "Mínimo".to_string(),
+            metric: "Min".to_string(),
             value: to_ms_str(hist.min()),
         });
 
         metrics.push(LatencyMetrics {
-            metric: "Média".to_string(),
+            metric: "Mean".to_string(),
             value: to_ms_str(hist.mean() as u64),
         });
 
-        // O MOTOR DINÂMICO DE PERCENTIS
         for &p in percentiles {
             let p_val = p * 100.0;
 
-            // Se for cravado (ex: 50.0), imprime "p50". Se for fracionado (ex: 99.9), imprime "p99.9"
             let p_label = if p_val.fract() == 0.0 {
                 if p_val == 50.0 {
-                    "p50 (Mediana)".to_string()
+                    "p50 (Median)".to_string()
                 } else {
                     format!("p{:.0}", p_val)
                 }
@@ -149,7 +147,7 @@ pub fn print_summary(
         }
 
         metrics.push(LatencyMetrics {
-            metric: "Máximo".to_string(),
+            metric: "Max".to_string(),
             value: to_ms_str(hist.max()),
         });
 
@@ -164,11 +162,11 @@ pub fn print_summary(
     println!("{}", table);
     println!(
         "{} {} | {} {} | {} {:?}",
-        "✅ Sucessos:".green().bold(),
+        "✅ Successes:".green().bold(),
         successes.to_string().bright_white(),
-        "❌ Falhas:".red().bold(),
+        "❌ Failures:".red().bold(),
         failures.to_string().bright_white(),
-        "⏱️ Tempo Total:".cyan().bold(),
+        "⏱️ Total Time:".cyan().bold(),
         total
     );
 
@@ -177,10 +175,7 @@ pub fn print_summary(
 
     println!("\n{}", "-------------------------".bright_black());
 
-    println!(
-        "\n{}",
-        "📊 DISTRIBUIÇÃO DE STATUS CODES".bold().bright_white()
-    );
+    println!("\n{}", "📊 STATUS CODES DISTRIBUTION".bold().bright_white());
 
     let mut codes: Vec<_> = status_counts.into_iter().collect();
 
@@ -197,13 +192,13 @@ pub fn print_summary(
     }
 
     if !error_counts.is_empty() {
-        println!("\n{}", "❌ DETALHAMENTO DE FALHAS".bold().red());
+        println!("\n{}", "❌ FAILURES DETAILS".bold().red());
 
-        // Converte para vetor e ordena (maior quantidade de erros no topo)
+        // Converts to vector and sorts (highest error count at top)
         let mut sorted_errors: Vec<_> = error_counts.into_iter().collect();
         sorted_errors.sort_by_key(|item| std::cmp::Reverse(item.1));
         for (err, count) in sorted_errors {
-            // Calcula a porcentagem em relação ao total de falhas
+            // Calculates percentage relative to total failures
             let perc = (count as f64 / failures as f64) * 100.0;
             println!(
                 "  {:<30} {:>6} ({:>4.1}%)",
@@ -216,17 +211,16 @@ pub fn print_summary(
 
     if assertion_failures > 0 {
         println!(
-            "❌ Falhas de Asserção: {}",
+            "❌ Assertion Failures: {}",
             assertion_failures.to_string().red()
         );
     }
 
     println!("\n{}", "-------------------------".bright_black());
 
-    println!("\n{}", "📈 EFICIÊNCIA E REDE".bold().bright_white());
+    println!("\n{}", "📈 EFFICIENCY AND NETWORK".bold().bright_white());
 
-    // --- NOVA LÓGICA DE CÁLCULO DE MB/s ---
-    let sent_mb = bytes_sent as f64 / 1_048_576.0; // Divide por 1024^2
+    let sent_mb = bytes_sent as f64 / 1_048_576.0; // Divides by 1024^2
     let recv_mb = bytes_recv as f64 / 1_048_576.0;
 
     let throughput_sent = sent_mb / total_secs;
@@ -238,31 +232,31 @@ pub fn print_summary(
     let throughput_recv_str = format!("{:.2}", throughput_recv).yellow();
 
     println!(
-        "📤 Transferência:   {} MB totais ({} MB/s)",
+        "📤 Transfered:   {} MB totais ({} MB/s)",
         sent_mb_str, throughput_sent_str
     );
     println!(
-        "📥 Recebimento:     {} MB totais ({} MB/s)",
+        "📥 Received:     {} MB totais ({} MB/s)",
         recv_mb_str, throughput_recv_str
     );
     println!("\n{}", "-------------------------".bright_black());
 
-    println!("\n{}", "📈 EFICIÊNCIA DO CANHÃO".bold().bright_white());
+    println!("\n{}", "📈 CANNON EFFICIENCY".bold().bright_white());
 
     if let Some(target) = target_rps {
         let efficiency = (actual_rps / target as f64) * 100.0;
         let rps_str = format!("{:.2}", actual_rps).yellow();
-        println!("RPS Alvo:      {}", target.to_string().cyan());
-        println!("RPS Real:      {} ({:.1}%)", rps_str, efficiency);
+        println!("Target RPS:      {}", target.to_string().cyan());
+        println!("Real RPS:      {} ({:.1}%)", rps_str, efficiency);
     } else {
         println!(
-            "RPS Médio:     {} req/s",
+            "Mean RPS:     {} req/s",
             format!("{:.2}", actual_rps).yellow()
         );
     }
 
     println!("\n{}", "-------------------------".bright_black());
-    println!("Teste finalizado em {}s", total.as_secs());
+    println!("Test finished in {}s", total.as_secs());
 }
 
 pub fn print_banner() {
@@ -290,7 +284,7 @@ mod tests {
 
     #[test]
     fn test_to_ms_conversion() {
-        // to_ms converte microssegundos (us) para milissegundos (ms)
+        // to_ms converts microseconds (us) to milliseconds (ms)
         assert_eq!(to_ms(1_000), 1.0);
         assert_eq!(to_ms(500), 0.5);
         assert_eq!(to_ms(1_500_000), 1500.0);

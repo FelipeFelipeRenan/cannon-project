@@ -2,11 +2,7 @@ use clap::Parser;
 use serde::Deserialize;
 
 #[derive(Parser, Debug)]
-#[command(
-    author,
-    version,
-    about = "Cannon - Uma ferramenta de teste de carga em Rust"
-)]
+#[command(author, version, about = "Cannon - A load testing tool in Rust")]
 pub struct Args {
     #[arg(short, long)]
     pub url: Option<String>,
@@ -64,14 +60,14 @@ pub struct Args {
 
     #[arg(
         long,
-        help = "Força o uso de HTTP/2 Prior Knowledge (útil para localhost/h2c)"
+        help = "Force use of HTTP/2 Prior Knowledge (useful for localhost/h2c)"
     )]
     pub http2: bool,
 
     #[arg(
         long,
         default_value_t = 5000,
-        help = "Timeout apenas para estabelecer a conexão TCP (ms)"
+        help = "Timeout only for establishing TCP connection (ms)"
     )]
     pub connect_timeout: u64,
 
@@ -90,26 +86,26 @@ pub struct Args {
 
     #[arg(
         long,
-        help = "Salva as métricas atuais (p99 e RPS) num arquivo JSON de baseline"
+        help = "Saves the current metrics (p99 and RPS) to a baseline JSON file."
     )]
     pub save_baseline: Option<String>,
 
     #[arg(
         long,
-        help = "Compara o teste atual com um baseline salvo e falha se piorar"
+        help = "Compares current test with a saved baseline and fails if worse"
     )]
     pub compare_baseline: Option<String>,
 
     #[arg(
         long,
         default_value_t = 5.0,
-        help = "Tolerância (em %) para regressão de latência"
+        help = "Tolerance (in %) for latency regression"
     )]
     pub tolerance: f64,
 
     #[arg(
         long,
-        help = "Modo Deus: Amarra as threads do Tokio aos núcleos físicos (Pinning)"
+        help = "God Mode: Pins Tokio threads to physical cores (Pinning)"
     )]
     pub pin_threads: bool,
 }
@@ -145,7 +141,6 @@ mod tests {
 
     #[test]
     fn test_valid_basic_arguments() {
-        // Simula: cannon -u http://localhost -c 100
         let args = Args::try_parse_from(["cannon", "-u", "http://localhost", "-c", "100"]).unwrap();
 
         assert_eq!(args.url.unwrap(), "http://localhost");
@@ -156,8 +151,8 @@ mod tests {
 
     #[test]
     fn test_missing_url_when_not_updating() {
-        // Se rodar "cannon" sem URL e sem a flag "--update", deve falhar no parse se a URL for obrigatória.
-        // Como no seu código a URL é Option<String> e validada no main.rs, o parse do clap passa.
+        // if "cannon" is run without a URL and without the "--update" flag, it should fail to parse if the URL is mandatory.
+        // since the URL in your code is an `Option<String>` and is validated in `main.rs`, the `clap` parsing succeeds.
         let args = Args::try_parse_from(["cannon"]);
         assert!(args.is_ok());
         assert!(args.unwrap().url.is_none());
@@ -165,7 +160,6 @@ mod tests {
 
     #[test]
     fn test_custom_headers_parsing() {
-        // Simula: cannon -u http://localhost -H "Auth: Bearer 123" -H "Accept: application/json"
         let args = Args::try_parse_from([
             "cannon",
             "-u",
@@ -186,7 +180,7 @@ mod tests {
         let args = Args::try_parse_from(["cannon", "-u", "http://localhost"]).unwrap();
         assert_eq!(
             args.apdex_t, 50,
-            "O tempo tolerável do Apdex deve ser 50ms por padrão"
+            "Apdex tolerable time should be 50ms by default"
         );
     }
 }

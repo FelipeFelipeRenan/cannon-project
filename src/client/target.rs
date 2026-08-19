@@ -39,7 +39,6 @@ impl TargetResult {
     }
 }
 
-// --- ENUM POLIMÓRFICO (STATIC DISPATCH - ZERO VTABLE OVERHEAD) ---
 pub enum Target {
     Http {
         client: reqwest::Client,
@@ -56,7 +55,6 @@ pub enum Target {
 }
 
 impl Target {
-    // Factory method para HTTP (Aceita os Arcs diretamente)
     pub fn new_http(
         client: reqwest::Client,
         url: String,
@@ -73,7 +71,6 @@ impl Target {
         }
     }
 
-    // Factory method para TCP (Assíncrono, constrói o Pool e devolve Result)
     pub async fn new_tcp(address: &str, workers: u32) -> Result<Self, String> {
         let (tx, rx) = async_channel::bounded(workers as usize);
         println!("🔌 Estabelecendo pool de {} conexões TCP...", workers);
@@ -101,7 +98,6 @@ impl Target {
         });
     }
 
-    // O compilador injeta esse match direto no loop do Worker!
     #[inline(always)]
     pub async fn fire(&self, payload: &[u8]) -> TargetResult {
         let start = std::time::Instant::now();
@@ -163,15 +159,12 @@ impl Target {
                 address,
             } => {
                 if let Ok(mut stream) = pool_rx.recv().await {
-                    // 1. Escreve APENAS os bytes puros do template. Sem \n, sem magia.
-                    // 1. Tenta escrever. Se falhar, a conexão caiu. Dispara a cura!
                     if let Err(e) = stream.write_all(payload).await {
                         Self::trigger_reconnect(pool_tx.clone(), address.clone());
                         return TargetResult::fail(start.elapsed(), format!("Broken Pipe: {}", e));
                     }
                     let _ = stream.flush().await;
 
-                    // 2. Tenta ler o ACK. Se falhar, o alvo fechou a porta na nossa cara. Cura!
                     let mut buffer = [0; 1];
                     if let Err(e) = stream.read_exact(&mut buffer).await {
                         Self::trigger_reconnect(pool_tx.clone(), address.clone());
@@ -181,7 +174,6 @@ impl Target {
                         );
                     }
 
-                    // 3. Tudo perfeito. Devolve o socket intacto para o Pool.
                     let _ = pool_tx.send(stream).await;
 
                     TargetResult::success(start.elapsed(), payload.len() as u64, 1)

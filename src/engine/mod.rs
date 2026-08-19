@@ -1,4 +1,4 @@
 pub mod worker;
 
-// Re-exporta a função principal para não quebrar o main.rs
+// Re-exports the main function to avoid breaking main.rs
 pub use worker::run_workers;

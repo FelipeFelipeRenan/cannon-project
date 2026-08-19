@@ -15,16 +15,15 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Lemos os argumentos antes de ligar o motor
     let args = Args::parse();
 
     if args.pin_threads {
-        let core_ids = core_affinity::get_core_ids().expect("❌ Falha ao ler a topologia da CPU");
+        let core_ids = core_affinity::get_core_ids().expect("❌ Error reading CPU topology");
         let core_count = core_ids.len();
         let core_idx = Arc::new(AtomicUsize::new(0));
 
         println!(
-            "CPU Pinning ativado: Aplicando Afinidade de CPU Estrita ({} núcleos)...",
+            "CPU Pinning active: Applying Strict CPU Affinity ({} cores)...",
             core_count
         );
 
@@ -40,7 +39,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         rt.block_on(async { run_app(args).await })
     } else {
-        // Inicialização padrão (Deixa o SO decidir)
         let rt = tokio::runtime::Runtime::new()?;
         rt.block_on(async { run_app(args).await })
     }
@@ -56,8 +54,8 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     if let Err(e) = cannon::args::config::merge_with_yaml(&mut args) {
         eprintln!(
-            "{} Falha ao carregar configuração YAML: {}",
-            "❌ Erro:".red().bold(),
+            "{} Failed to load YAML configuration: {}",
+            "❌ Error:".red().bold(),
             e
         );
         std::process::exit(1);
@@ -66,7 +64,7 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let url_str = if args.mode.to_lowercase() == "tcp" {
         args.url
             .clone()
-            .expect("❌ Erro: The address (IP:Port) from the target is required!")
+            .expect("❌ Error: The address (IP:Port) from the target is required!")
     } else {
         cannon::security::url_validator::validate_and_extract(&args.url)
     };
@@ -84,11 +82,11 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     print_banner();
 
-    println!("🎯 Alvo: {}", url_str.bright_cyan().bold());
+    println!("🎯 Target: {}", url_str.bright_cyan().bold());
     println!(
         "🚀 {}",
         format!(
-            "Preparando o canhão para {} disparo(s) com {} workers...",
+            "Preparing the Cannon for {} shots with {} workers...",
             args.count.to_string().cyan(),
             args.workers.to_string().magenta()
         )
@@ -104,7 +102,7 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     if args.warmup > 0 {
         println!(
-            "🔥 Modo Warm-up ativado: Desprezando os primeiros {}s de métricas...",
+            "🔥 Warm-up Mode active: Disregarding the first {}s of metrics...",
             args.warmup.to_string().yellow()
         );
     }
@@ -141,7 +139,7 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
     );
     println!(
         "{}",
-        "Pressione Ctrl+C para interromper e ver o relatório parcial".bright_black()
+        "Press Ctrl+C to interrupt and view partial report".bright_black()
     );
 
     // Instancia os Atomics
@@ -158,7 +156,7 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
         // Spawn Background Worker pro I/O de disco
         tokio::spawn(async move {
             if let Ok(mut w) = csv::Writer::from_path(&path_clone) {
-                let _ = w.write_record(["tempo_relativo_ms", "status", "latencia_ms", "erro"]);
+                let _ = w.write_record(["relative_time_ms", "status", "latency_ms", "error"]);
                 while let Some(rec) = rx.recv().await {
                     let _ =
                         w.write_record(&[rec.relative_ms, rec.status, rec.latency_ms, rec.error]);
@@ -168,7 +166,6 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    // Inicia o motor
     let engine_handle = tokio::spawn(cannon::engine::worker::run_workers(
         args.count,
         args.workers,
@@ -181,7 +178,6 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
         warmup_end,
     ));
 
-    // UI Loop (Puxa os dados dos Atomics a cada 500ms)
     let mut last_total = 0;
     let mut last_time = Instant::now();
 
@@ -203,20 +199,20 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             _ = tokio::signal::ctrl_c() => {
-                println!("\n\n{}", "⚠️ Interrupção detectada! Aguardando workers...".yellow().bold());
+                println!("\n\n{}", "⚠️ Interruption detected! Waiting workers...".yellow().bold());
                 break;
             }
         }
     }
 
     let worker_results = engine_handle.await.unwrap_or_default();
-    pb.finish_with_message("Concluído");
+    pb.finish_with_message("Finished");
 
     if let Some(path) = &args.csv {
-        println!("📊 Dados brutos exportados para {}!", path.bright_cyan());
+        println!("📊 Raw data exported to {}!", path.bright_cyan());
     }
 
-    // Fusão dos relatórios locais (O Merge final)
+    // Merging local reports (The final merge)
     let mut hist = Histogram::<u64>::new_with_bounds(1, 60_000_000, 3)?;
     let mut status_counts = std::collections::HashMap::new();
     let mut error_counts = std::collections::HashMap::new();
@@ -278,7 +274,7 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(json_str) = serde_json::to_string_pretty(&baseline_data) {
             let _ = std::fs::write(path, json_str);
             println!(
-                "\n💾 Baseline de performance salvo com sucesso em: {}",
+                "\n💾 Performance baseline saved successfully to: {}",
                 path.bright_green()
             );
         }
@@ -289,45 +285,42 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
             if let Ok(baseline) = serde_json::from_str::<serde_json::Value>(&content) {
                 let base_p99 = baseline["p99_ms"].as_f64().unwrap_or(0.0);
 
-                println!(
-                    "\n⚖️  {}",
-                    "ANÁLISE DE BASELINE (CI/CD)".bright_blue().bold()
-                );
-                println!("   P99 Histórico: {:.2}ms", base_p99);
-                println!("   P99 Atual:     {:.2}ms", current_p99_ms);
+                println!("\n⚖️  {}", "BASELINE ANALISYS (CI/CD)".bright_blue().bold());
+                println!("   Historic P99: {:.2}ms", base_p99);
+                println!("   Current P99:     {:.2}ms", current_p99_ms);
 
                 if current_p99_ms > base_p99 {
                     let degradation = ((current_p99_ms - base_p99) / base_p99) * 100.0;
                     println!(
-                        "   Variação:      +{} pior",
+                        "   Variation:      +{} worst",
                         format!("{:.2}%", degradation).yellow()
                     );
 
                     if degradation > args.tolerance {
                         println!(
-                            "\n❌ {} Tolerância de {}% excedida. Abortando com erro...",
-                            "REGRESSÃO DE PERFORMANCE DETECTADA!".red().bold(),
+                            "\n❌ {} Tolerance of {}% exceeded. Aborting with error...",
+                            "PERFORMANCE REGRESSION DETECTED!".red().bold(),
                             args.tolerance
                         );
                         std::process::exit(1);
                     } else {
                         println!(
-                            "\n✅ Regressão aceitável. Dentro da tolerância de {}%.",
+                            "\n✅ Accepted regression. Whintin tolerance of {}%.",
                             args.tolerance
                         );
                     }
                 } else {
                     let improvement = ((base_p99 - current_p99_ms) / base_p99) * 100.0;
                     println!(
-                        "   Variação:      -{} melhor",
+                        "   Variation:      -{} better",
                         format!("{:.2}%", improvement).green()
                     );
-                    println!("\n✅ Performance melhorou ou se manteve constante!");
+                    println!("\n✅ Performance improved or remained constant!");
                 }
             }
         } else {
             println!(
-                "\n⚠️ Aviso: Arquivo de baseline '{}' não encontrado. Comparação ignorada.",
+                "\n⚠️ Warning: Baseline file '{}' not found. Comparison skipped.",
                 path.yellow()
             );
         }
@@ -336,10 +329,9 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let status_for_report = status_counts.clone();
     let errors_for_report = error_counts.clone();
 
-    // Exportação de Dados (JSON / HTML)
     if args.output.is_some() || args.html.is_some() {
         let report = FinalReport {
-            target: url_str.clone(), // CORREÇÃO 3: Usar o url_str aqui pro JSON/HTML
+            target: url_str.clone(),
             total_requests: args.count,
             concurrency: args.workers,
             successes: success_count,
@@ -364,7 +356,7 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(path) = &args.output {
             std::fs::write(path, &json_data)?;
             println!(
-                "📂 Relatório JSON salvo com sucesso em {}!",
+                "📂 JSON report saved successfully to {}!",
                 path.bright_cyan()
             );
         }
@@ -372,7 +364,7 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(path) = &args.html {
             generate_html_report(path, &json_data)?;
             println!(
-                "🌐 Relatório HTML salvo com sucesso em {}!",
+                "🌐 HTML report saved successfully to {}!",
                 path.bright_cyan()
             );
         }
@@ -382,7 +374,6 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn update() -> Result<(), Box<dyn std::error::Error>> {
-    // Definimos o identificador de destino que corresponde ao nome do asset no GitHub
     let target = if cfg!(target_os = "linux") {
         "linux-x64"
     } else if cfg!(target_os = "windows") {
@@ -404,13 +395,10 @@ fn update() -> Result<(), Box<dyn std::error::Error>> {
         .update()?;
 
     if status.updated() {
-        println!(
-            "✅ Atualizado com sucesso para a versão {}",
-            status.version()
-        );
+        println!("✅ Successfully updated to version {}", status.version());
     } else {
         println!(
-            "✨ Você já está na versão mais recente: {}",
+            "✨ You are already on the latest version: {}",
             status.version()
         );
     }

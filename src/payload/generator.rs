@@ -48,9 +48,7 @@ impl PayloadTemplate {
                 ));
             }
 
-            let end_idx = remaining
-                .find("}}")
-                .expect("Sintaxe inválida: tag não fechada");
+            let end_idx = remaining.find("}}").expect("Invalid syntax: unclosed tag");
             let tag = &remaining[start_idx + 2..end_idx];
 
             match tag {
@@ -73,7 +71,7 @@ impl PayloadTemplate {
                     });
                 }
                 _ => {
-                    // Fallback se a tag não for reconhecida, trata como texto estático
+                    // Fallback if tag is not recognized, treat as static text
                     chunks.push(Chunk::StaticText(format!("{{{{{}}}}}", tag).into_bytes()));
                 }
             }

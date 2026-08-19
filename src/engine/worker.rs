@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
-// Painel Global Lock-Free para atualizar a UI em tempo real
+// Global Lock-Free Panel to update UI in real time
 #[derive(Default)]
 pub struct SharedMetrics {
     pub successes: AtomicU64,
@@ -18,7 +18,7 @@ pub struct SharedMetrics {
     pub bytes_received: AtomicU64,
 }
 
-// O que cada worker devolve no fim da sua vida
+// What each worker returns at the end of its lifetime
 pub struct WorkerResult {
     pub histogram: Histogram<u64>,
     pub status_counts: HashMap<u16, u64>,
@@ -58,7 +58,6 @@ pub async fn run_workers(
         let handle = tokio::spawn(async move {
             let mut payload_buffer = Vec::with_capacity(1024);
 
-            // Estado LOCAL do worker (Sem Lock!)
             let mut local_hist = Histogram::<u64>::new_with_bounds(1, 60_000_000, 3).unwrap();
             let mut local_status = HashMap::new();
             let mut local_errors = HashMap::new();
@@ -78,7 +77,6 @@ pub async fn run_workers(
 
                 let is_warmup = Instant::now() < warmup_end;
 
-                // 1. Atualiza Atomics Globais (Rápido, vai direto pra L1 Cache)
                 if res.success {
                     shared.successes.fetch_add(1, Ordering::Relaxed);
                     if !is_warmup {
@@ -105,7 +103,7 @@ pub async fn run_workers(
                         local_assert_failures += 1;
                     }
                 }
-                // 2. Atualiza HashMaps Locais
+
                 if let Some(code) = res.status_code {
                     *local_status.entry(code).or_insert(0) += 1;
                 }
@@ -116,7 +114,6 @@ pub async fn run_workers(
                     local_assert_failures += 1;
                 }
 
-                // 3. I/O Assíncrono de CSV (Se ativado)
                 if let Some(tx) = &csv_tx {
                     let rec = CsvRecord {
                         relative_ms: start_time.elapsed().as_millis().to_string(),
@@ -131,7 +128,7 @@ pub async fn run_workers(
                 }
             }
 
-            // Devolve o balanço do worker quando o teste acabar
+            // Returns the worker's balance when the test finishes
             WorkerResult {
                 histogram: local_hist,
                 status_counts: local_status,
@@ -142,7 +139,6 @@ pub async fn run_workers(
         handles.push(handle);
     }
 
-    // Cronômetro do RPS constante
     if let Some(r) = rps {
         let mut interval =
             tokio::time::interval(std::time::Duration::from_secs_f64(1.0 / r as f64));
@@ -157,9 +153,9 @@ pub async fn run_workers(
         }
     }
 
-    drop(job_tx); // Fecha o canal de jobs para avisar os workers que acabou
+    drop(job_tx);
 
-    // Coleta todos os resultados locais
+    // Collects all local results
     let mut results = Vec::new();
     for handle in handles {
         if let Ok(res) = handle.await {
