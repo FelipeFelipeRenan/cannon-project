@@ -1,6 +1,6 @@
 // src/engine/worker.rs
 
-use crate::client::target::Target;
+use crate::client::target::{Target, TargetResult};
 use crate::payload::generator::PayloadTemplate;
 use hdrhistogram::Histogram;
 use std::collections::HashMap;
@@ -31,6 +31,48 @@ pub struct CsvRecord {
     pub status: String,
     pub latency_ms: String,
     pub error: String,
+}
+
+fn record_result(
+    res: &TargetResult,
+    is_warmup: bool,
+    shared: &SharedMetrics,
+    histogram: &mut Histogram<u64>,
+    status_counts: &mut HashMap<u16, u64>,
+    error_counts: &mut HashMap<String, u64>,
+    assertion_failures: &mut u64,
+) {
+    if is_warmup {
+        return;
+    }
+
+    if res.success {
+        shared.successes.fetch_add(1, Ordering::Relaxed);
+    } else {
+        shared.failures.fetch_add(1, Ordering::Relaxed);
+    }
+
+    shared
+        .bytes_sent
+        .fetch_add(res.bytes_sent, Ordering::Relaxed);
+
+    shared
+        .bytes_received
+        .fetch_add(res.bytes_received, Ordering::Relaxed);
+
+    let _ = histogram.record(res.duration.as_micros() as u64);
+
+    if let Some(code) = res.status_code {
+        *status_counts.entry(code).or_insert(0) += 1;
+    }
+
+    if let Some(err) = &res.error {
+        *error_counts.entry(err.clone()).or_insert(0) += 1;
+    }
+
+    if !res.assertion_success {
+        *assertion_failures += 1;
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -77,32 +119,15 @@ pub async fn run_workers(
 
                 let is_warmup = Instant::now() < warmup_end;
 
-                if res.success {
-                    shared.successes.fetch_add(1, Ordering::Relaxed);
-                    if !is_warmup {
-                        let _ = local_hist.record(res.duration.as_micros() as u64);
-                    }
-                } else {
-                    shared.failures.fetch_add(1, Ordering::Relaxed);
-                }
-                shared
-                    .bytes_sent
-                    .fetch_add(res.bytes_sent, Ordering::Relaxed);
-                shared
-                    .bytes_received
-                    .fetch_add(res.bytes_received, Ordering::Relaxed);
-
-                if !is_warmup {
-                    if let Some(code) = res.status_code {
-                        *local_status.entry(code).or_insert(0) += 1;
-                    }
-                    if let Some(err) = &res.error {
-                        *local_errors.entry(err.clone()).or_insert(0) += 1;
-                    }
-                    if !res.assertion_success {
-                        local_assert_failures += 1;
-                    }
-                }
+                record_result(
+                    &res,
+                    is_warmup,
+                    &shared,
+                    &mut local_hist,
+                    &mut local_status,
+                    &mut local_errors,
+                    &mut local_assert_failures,
+                );
 
                 if let Some(tx) = &csv_tx {
                     let rec = CsvRecord {
