@@ -104,16 +104,6 @@ pub async fn run_workers(
                     }
                 }
 
-                if let Some(code) = res.status_code {
-                    *local_status.entry(code).or_insert(0) += 1;
-                }
-                if let Some(err) = &res.error {
-                    *local_errors.entry(err.clone()).or_insert(0) += 1;
-                }
-                if !res.assertion_success {
-                    local_assert_failures += 1;
-                }
-
                 if let Some(tx) = &csv_tx {
                     let rec = CsvRecord {
                         relative_ms: start_time.elapsed().as_millis().to_string(),
