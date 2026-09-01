@@ -102,6 +102,7 @@ pub fn print_summary(
     hist: &Histogram<u64>,
     total: std::time::Duration,
     target_rps: Option<u32>,
+    actual_rps: f64,
     status_counts: std::collections::HashMap<u16, u64>,
     error_counts: std::collections::HashMap<String, u64>,
     assertion_failures: u64,
@@ -170,9 +171,6 @@ pub fn print_summary(
         total
     );
 
-    let total_secs = total.as_secs_f64();
-    let actual_rps = successes as f64 / total_secs;
-
     println!("\n{}", "-------------------------".bright_black());
 
     println!("\n{}", "📊 STATUS CODES DISTRIBUTION".bold().bright_white());
@@ -222,6 +220,8 @@ pub fn print_summary(
 
     let sent_mb = bytes_sent as f64 / 1_048_576.0; // Divides by 1024^2
     let recv_mb = bytes_recv as f64 / 1_048_576.0;
+
+    let total_secs = total.as_secs_f64();
 
     let throughput_sent = sent_mb / total_secs;
     let throughput_recv = recv_mb / total_secs;

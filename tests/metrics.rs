@@ -1,6 +1,7 @@
 use cannon::client::target::Target;
 use cannon::engine::worker::{run_workers, SharedMetrics};
 use reqwest::Method;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -192,6 +193,8 @@ async fn warmup_requests_are_excluded_from_metrics() {
         0
     );
 
+    assert_eq!(shared_metrics.measured_requests.load(Ordering::Relaxed), 0);
+
     assert!(result.status_counts.is_empty());
     assert!(result.error_counts.is_empty());
     assert_eq!(result.assertion_failures, 0);
@@ -284,6 +287,8 @@ async fn measured_requests_are_recorded() {
             .load(std::sync::atomic::Ordering::Relaxed),
         0
     );
+
+    assert_eq!(shared_metrics.measured_requests.load(Ordering::Relaxed), 1);
 
     assert_eq!(result.status_counts.get(&200), Some(&1));
 

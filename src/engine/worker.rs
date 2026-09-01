@@ -16,6 +16,7 @@ pub struct SharedMetrics {
     pub failures: AtomicU64,
     pub bytes_sent: AtomicU64,
     pub bytes_received: AtomicU64,
+    pub measured_requests: AtomicU64,
 }
 
 // What each worker returns at the end of its lifetime
@@ -45,6 +46,8 @@ fn record_result(
     if is_warmup {
         return;
     }
+
+    shared.measured_requests.fetch_add(1, Ordering::Relaxed);
 
     if res.success {
         shared.successes.fetch_add(1, Ordering::Relaxed);

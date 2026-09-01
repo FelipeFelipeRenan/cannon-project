@@ -233,12 +233,17 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let failure_count = shared_metrics.failures.load(Ordering::Relaxed);
     let total_bytes_sent = shared_metrics.bytes_sent.load(Ordering::Relaxed);
     let total_bytes_received = shared_metrics.bytes_received.load(Ordering::Relaxed);
+    let measured_requests = shared_metrics.measured_requests.load(Ordering::Relaxed);
     let actual_duration = start_test.elapsed();
     let stable_duration = actual_duration
         .checked_sub(warmup_duration)
         .unwrap_or(actual_duration);
     let total_secs = stable_duration.as_secs_f64();
-    let actual_rps = success_count as f64 / total_secs;
+    let actual_rps = if total_secs > 0.0 {
+        measured_requests as f64 / total_secs
+    } else {
+        0.0
+    };
 
     let t_us = args.apdex_t * 1000;
     let satisfied = hist.count_between(0, t_us);
@@ -255,6 +260,7 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
         &hist,
         start_test.elapsed(),
         args.rps,
+        actual_rps,
         status_counts.clone(),
         error_counts.clone(),
         assertion_failures,
