@@ -98,7 +98,6 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let start_test = Instant::now();
 
     let warmup_duration = std::time::Duration::from_secs(args.warmup);
-    let warmup_end = start_test + warmup_duration;
 
     if args.warmup > 0 {
         println!(
@@ -175,7 +174,7 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
         shared_metrics.clone(),
         csv_tx,
         start_test,
-        warmup_end,
+        warmup_duration,
     ));
 
     let mut last_total = 0;
@@ -205,7 +204,7 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let worker_results = engine_handle.await.unwrap_or_default();
+    let (worker_results, measurement_duration) = engine_handle.await.unwrap_or_default();
     pb.finish_with_message("Finished");
 
     if let Some(path) = &args.csv {
@@ -234,11 +233,7 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let total_bytes_sent = shared_metrics.bytes_sent.load(Ordering::Relaxed);
     let total_bytes_received = shared_metrics.bytes_received.load(Ordering::Relaxed);
     let measured_requests = shared_metrics.measured_requests.load(Ordering::Relaxed);
-    let actual_duration = start_test.elapsed();
-    let stable_duration = actual_duration
-        .checked_sub(warmup_duration)
-        .unwrap_or(actual_duration);
-    let total_secs = stable_duration.as_secs_f64();
+    let total_secs = measurement_duration.as_secs_f64();
     let actual_rps = if total_secs > 0.0 {
         measured_requests as f64 / total_secs
     } else {

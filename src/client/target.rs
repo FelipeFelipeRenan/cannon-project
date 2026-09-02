@@ -73,13 +73,13 @@ impl Target {
 
     pub async fn new_tcp(address: &str, workers: u32) -> Result<Self, String> {
         let (tx, rx) = async_channel::bounded(workers as usize);
-        println!("🔌 Estabelecendo pool de {} conexões TCP...", workers);
+        println!("🔌 Establishing a pool of {} TCP connections...", workers);
         for _ in 0..workers {
             match TcpStream::connect(address).await {
                 Ok(stream) => {
                     let _ = tx.send(stream).await;
                 }
-                Err(e) => return Err(format!("Falha ao conectar: {}", e)),
+                Err(e) => return Err(format!("Failed to connect: {}", e)),
             }
         }
         Ok(Self::Tcp {

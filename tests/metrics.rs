@@ -3,13 +3,40 @@ use cannon::engine::worker::{run_workers, SharedMetrics};
 use reqwest::Method;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
+async fn spawn_test_server(listener: TcpListener) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                break;
+            };
+
+            tokio::spawn(async move {
+                let mut buffer = [0u8; 1024];
+
+                if socket.read(&mut buffer).await.is_err() {
+                    return;
+                }
+
+                let _ = socket
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\n\
+                          Content-Length: 2\r\n\
+                          Connection: close\r\n\
+                          \r\n\
+                          OK",
+                    )
+                    .await;
+            });
+        }
+    })
+}
+
 #[tokio::test]
 async fn status_code_is_counted_once() {
-    // Start a minimal HTTP server on an ephemeral port.
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("failed to bind test server");
@@ -18,34 +45,9 @@ async fn status_code_is_counted_once() {
         .local_addr()
         .expect("failed to get test server address");
 
-    let server = tokio::spawn(async move {
-        let (mut socket, _) = listener
-            .accept()
-            .await
-            .expect("failed to accept connection");
+    let server = spawn_test_server(listener).await;
 
-        let mut buffer = [0u8; 1024];
-
-        socket
-            .read(&mut buffer)
-            .await
-            .expect("failed to read HTTP request");
-
-        socket
-            .write_all(
-                b"HTTP/1.1 200 OK\r\n\
-                  Content-Length: 2\r\n\
-                  Connection: close\r\n\
-                  \r\n\
-                  OK",
-            )
-            .await
-            .expect("failed to write HTTP response");
-    });
-
-    let client = reqwest::Client::builder()
-        .build()
-        .expect("failed to build HTTP client");
+    let client = reqwest::Client::new();
 
     let target = Target::new_http(
         client,
@@ -58,7 +60,7 @@ async fn status_code_is_counted_once() {
     let shared_metrics = Arc::new(SharedMetrics::default());
     let start_time = Instant::now();
 
-    let results = run_workers(
+    let (results, _) = run_workers(
         1,
         1,
         None,
@@ -67,29 +69,19 @@ async fn status_code_is_counted_once() {
         shared_metrics.clone(),
         None,
         start_time,
-        start_time,
+        Duration::ZERO,
     )
     .await;
 
-    server.await.expect("test server task failed");
+    server.abort();
 
     assert_eq!(results.len(), 1);
 
     let result = &results[0];
 
-    assert_eq!(
-        result.status_counts.get(&200),
-        Some(&1),
-        "HTTP 200 must be counted exactly once"
-    );
+    assert_eq!(result.status_counts.get(&200), Some(&1));
 
-    assert_eq!(
-        shared_metrics
-            .successes
-            .load(std::sync::atomic::Ordering::Relaxed),
-        1,
-        "exactly one request should be successful"
-    );
+    assert_eq!(shared_metrics.successes.load(Ordering::Relaxed), 1);
 }
 
 #[tokio::test]
@@ -102,32 +94,7 @@ async fn warmup_requests_are_excluded_from_metrics() {
         .local_addr()
         .expect("failed to get test server address");
 
-    let server = tokio::spawn(async move {
-        for _ in 0..2 {
-            let (mut socket, _) = listener
-                .accept()
-                .await
-                .expect("failed to accept connection");
-
-            let mut buffer = [0u8; 1024];
-
-            socket
-                .read(&mut buffer)
-                .await
-                .expect("failed to read HTTP request");
-
-            socket
-                .write_all(
-                    b"HTTP/1.1 200 OK\r\n\
-                      Content-Length: 2\r\n\
-                      Connection: close\r\n\
-                      \r\n\
-                      OK",
-                )
-                .await
-                .expect("failed to write HTTP response");
-        }
-    });
+    let server = spawn_test_server(listener).await;
 
     let client = reqwest::Client::new();
 
@@ -140,65 +107,65 @@ async fn warmup_requests_are_excluded_from_metrics() {
     );
 
     let shared_metrics = Arc::new(SharedMetrics::default());
-
     let start_time = Instant::now();
 
-    // Warm-up will remain active for the entire test.
-    let warmup_end = start_time + std::time::Duration::from_secs(60);
-
-    let results = run_workers(
+    let (results, measurement_duration) = run_workers(
         2,
-        1,
+        2,
         None,
         None,
         Arc::new(target),
         shared_metrics.clone(),
         None,
         start_time,
-        warmup_end,
+        Duration::from_millis(50),
     )
     .await;
 
-    server.await.expect("test server task failed");
+    server.abort();
 
-    assert_eq!(results.len(), 1);
+    assert_eq!(results.len(), 2);
 
-    let result = &results[0];
-
-    assert_eq!(
-        shared_metrics
-            .successes
-            .load(std::sync::atomic::Ordering::Relaxed),
-        0
+    assert!(
+        measurement_duration > Duration::ZERO,
+        "measurement duration must be greater than zero"
     );
 
     assert_eq!(
-        shared_metrics
-            .failures
-            .load(std::sync::atomic::Ordering::Relaxed),
-        0
+        shared_metrics.measured_requests.load(Ordering::Relaxed),
+        2,
+        "warm-up requests must not be included in measured requests"
     );
 
     assert_eq!(
-        shared_metrics
-            .bytes_sent
-            .load(std::sync::atomic::Ordering::Relaxed),
-        0
+        shared_metrics.successes.load(Ordering::Relaxed),
+        2,
+        "only measured requests should contribute to successes"
     );
+
+    assert_eq!(shared_metrics.failures.load(Ordering::Relaxed), 0);
+
+    let total_status_count: u64 = results
+        .iter()
+        .map(|result| result.status_counts.get(&200).copied().unwrap_or(0))
+        .sum();
 
     assert_eq!(
-        shared_metrics
-            .bytes_received
-            .load(std::sync::atomic::Ordering::Relaxed),
-        0
+        total_status_count, 2,
+        "only measured requests should contribute status codes"
     );
 
-    assert_eq!(shared_metrics.measured_requests.load(Ordering::Relaxed), 0);
+    let total_histogram_count: u64 = results.iter().map(|result| result.histogram.len()).sum();
 
-    assert!(result.status_counts.is_empty());
-    assert!(result.error_counts.is_empty());
-    assert_eq!(result.assertion_failures, 0);
-    assert_eq!(result.histogram.len(), 0);
+    assert_eq!(
+        total_histogram_count, 2,
+        "only measured requests should be recorded in histograms"
+    );
+
+    let total_assertion_failures: u64 =
+        results.iter().map(|result| result.assertion_failures).sum();
+
+    assert_eq!(total_assertion_failures, 0);
 }
 
 #[tokio::test]
@@ -211,32 +178,7 @@ async fn measured_requests_are_recorded() {
         .local_addr()
         .expect("failed to get test server address");
 
-    let server = tokio::spawn(async move {
-        for _ in 0..1 {
-            let (mut socket, _) = listener
-                .accept()
-                .await
-                .expect("failed to accept connection");
-
-            let mut buffer = [0u8; 1024];
-
-            socket
-                .read(&mut buffer)
-                .await
-                .expect("failed to read HTTP request");
-
-            socket
-                .write_all(
-                    b"HTTP/1.1 200 OK\r\n\
-                      Content-Length: 2\r\n\
-                      Connection: close\r\n\
-                      \r\n\
-                      OK",
-                )
-                .await
-                .expect("failed to write HTTP response");
-        }
-    });
+    let server = spawn_test_server(listener).await;
 
     let client = reqwest::Client::new();
 
@@ -249,13 +191,9 @@ async fn measured_requests_are_recorded() {
     );
 
     let shared_metrics = Arc::new(SharedMetrics::default());
-
     let start_time = Instant::now();
 
-    // Warm-up has already finished.
-    let warmup_end = start_time;
-
-    let results = run_workers(
+    let (results, measurement_duration) = run_workers(
         1,
         1,
         None,
@@ -264,33 +202,26 @@ async fn measured_requests_are_recorded() {
         shared_metrics.clone(),
         None,
         start_time,
-        warmup_end,
+        Duration::ZERO,
     )
     .await;
 
-    server.await.expect("test server task failed");
+    server.abort();
 
     assert_eq!(results.len(), 1);
 
-    let result = &results[0];
-
-    assert_eq!(
-        shared_metrics
-            .successes
-            .load(std::sync::atomic::Ordering::Relaxed),
-        1
+    assert!(
+        measurement_duration > Duration::ZERO,
+        "measurement duration must be greater than zero"
     );
 
-    assert_eq!(
-        shared_metrics
-            .failures
-            .load(std::sync::atomic::Ordering::Relaxed),
-        0
-    );
+    assert_eq!(shared_metrics.successes.load(Ordering::Relaxed), 1);
+
+    assert_eq!(shared_metrics.failures.load(Ordering::Relaxed), 0);
 
     assert_eq!(shared_metrics.measured_requests.load(Ordering::Relaxed), 1);
 
-    assert_eq!(result.status_counts.get(&200), Some(&1));
+    assert_eq!(results[0].status_counts.get(&200), Some(&1));
 
-    assert_eq!(result.histogram.len(), 1);
+    assert_eq!(results[0].histogram.len(), 1);
 }

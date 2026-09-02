@@ -1,15 +1,12 @@
-// src/engine/worker.rs
-
 use crate::client::target::{Target, TargetResult};
 use crate::payload::generator::PayloadTemplate;
 use hdrhistogram::Histogram;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-// Global Lock-Free Panel to update UI in real time
 #[derive(Default)]
 pub struct SharedMetrics {
     pub successes: AtomicU64,
@@ -19,7 +16,6 @@ pub struct SharedMetrics {
     pub measured_requests: AtomicU64,
 }
 
-// What each worker returns at the end of its lifetime
 pub struct WorkerResult {
     pub histogram: Histogram<u64>,
     pub status_counts: HashMap<u16, u64>,
@@ -32,6 +28,25 @@ pub struct CsvRecord {
     pub status: String,
     pub latency_ms: String,
     pub error: String,
+}
+
+#[derive(Clone, Copy)]
+enum Job {
+    Warmup,
+    Measured,
+}
+
+struct PhaseConfig {
+    count: Option<u32>,
+    duration: Option<Duration>,
+    workers: u32,
+    template: Option<Arc<PayloadTemplate>>,
+    rps: Option<u32>,
+    target: Arc<Target>,
+    shared_metrics: Arc<SharedMetrics>,
+    csv_tx: Option<mpsc::Sender<CsvRecord>>,
+    start_time: Instant,
+    job: Job,
 }
 
 fn record_result(
@@ -78,20 +93,23 @@ fn record_result(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub async fn run_workers(
-    count: u32,
-    workers: u32,
-    template: Option<Arc<PayloadTemplate>>,
-    rps: Option<u32>,
-    target: Arc<Target>,
-    shared_metrics: Arc<SharedMetrics>,
-    csv_tx: Option<mpsc::Sender<CsvRecord>>,
-    start_time: Instant,
-    warmup_end: Instant,
-) -> Vec<WorkerResult> {
-    let (job_tx, async_job_rx) = async_channel::bounded::<()>(workers as usize);
-    let mut handles = Vec::new();
+async fn run_phase(config: PhaseConfig) -> Vec<WorkerResult> {
+    let PhaseConfig {
+        count,
+        duration,
+        workers,
+        template,
+        rps,
+        target,
+        shared_metrics,
+        csv_tx,
+        start_time,
+        job,
+    } = config;
+
+    let (job_tx, async_job_rx) = async_channel::bounded::<Job>(workers as usize);
+
+    let mut handles = Vec::with_capacity(workers as usize);
 
     for _ in 0..workers {
         let template = template.clone();
@@ -104,11 +122,12 @@ pub async fn run_workers(
             let mut payload_buffer = Vec::with_capacity(1024);
 
             let mut local_hist = Histogram::<u64>::new_with_bounds(1, 60_000_000, 3).unwrap();
+
             let mut local_status = HashMap::new();
             let mut local_errors = HashMap::new();
             let mut local_assert_failures = 0;
 
-            while rx.recv().await.is_ok() {
+            while let Ok(job) = rx.recv().await {
                 if let Some(tpl) = &template {
                     tpl.render(&mut payload_buffer);
                 }
@@ -118,13 +137,12 @@ pub async fn run_workers(
                 } else {
                     &[]
                 };
-                let res = target.fire(payload_ref).await;
 
-                let is_warmup = Instant::now() < warmup_end;
+                let res = target.fire(payload_ref).await;
 
                 record_result(
                     &res,
-                    is_warmup,
+                    matches!(job, Job::Warmup),
                     &shared,
                     &mut local_hist,
                     &mut local_status,
@@ -142,11 +160,11 @@ pub async fn run_workers(
                         latency_ms: res.duration.as_millis().to_string(),
                         error: res.error.unwrap_or_default(),
                     };
+
                     let _ = tx.send(rec).await;
                 }
             }
 
-            // Returns the worker's balance when the test finishes
             WorkerResult {
                 histogram: local_hist,
                 status_counts: local_status,
@@ -154,31 +172,124 @@ pub async fn run_workers(
                 assertion_failures: local_assert_failures,
             }
         });
+
         handles.push(handle);
     }
 
-    if let Some(r) = rps {
-        let mut interval =
-            tokio::time::interval(std::time::Duration::from_secs_f64(1.0 / r as f64));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Burst);
-        for _ in 0..count {
-            interval.tick().await;
-            let _ = job_tx.send(()).await;
+    match (count, duration) {
+        // Measurement phase: send exactly `count` requests.
+        (Some(count), None) => {
+            if let Some(rps) = rps {
+                let mut interval = tokio::time::interval(Duration::from_secs_f64(1.0 / rps as f64));
+
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Burst);
+
+                for _ in 0..count {
+                    interval.tick().await;
+
+                    if job_tx.send(job).await.is_err() {
+                        break;
+                    }
+                }
+            } else {
+                for _ in 0..count {
+                    if job_tx.send(job).await.is_err() {
+                        break;
+                    }
+                }
+            }
         }
-    } else {
-        for _ in 0..count {
-            let _ = job_tx.send(()).await;
+
+        // Warm-up phase: generate traffic for the configured duration.
+        (None, Some(duration)) => {
+            let deadline = Instant::now() + duration;
+
+            if let Some(rps) = rps {
+                let mut interval = tokio::time::interval(Duration::from_secs_f64(1.0 / rps as f64));
+
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Burst);
+
+                loop {
+                    interval.tick().await;
+
+                    if Instant::now() >= deadline {
+                        break;
+                    }
+
+                    if job_tx.send(job).await.is_err() {
+                        break;
+                    }
+                }
+            } else {
+                while Instant::now() < deadline {
+                    if job_tx.send(job).await.is_err() {
+                        break;
+                    }
+                }
+            }
         }
+
+        _ => {}
     }
 
     drop(job_tx);
 
-    // Collects all local results
-    let mut results = Vec::new();
+    let mut results = Vec::with_capacity(handles.len());
+
     for handle in handles {
-        if let Ok(res) = handle.await {
-            results.push(res);
+        if let Ok(result) = handle.await {
+            results.push(result);
         }
     }
+
     results
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn run_workers(
+    count: u32,
+    workers: u32,
+    template: Option<Arc<PayloadTemplate>>,
+    rps: Option<u32>,
+    target: Arc<Target>,
+    shared_metrics: Arc<SharedMetrics>,
+    csv_tx: Option<mpsc::Sender<CsvRecord>>,
+    start_time: Instant,
+    warmup_duration: Duration,
+) -> (Vec<WorkerResult>, Duration) {
+    if warmup_duration > Duration::ZERO {
+        run_phase(PhaseConfig {
+            count: None,
+            duration: Some(warmup_duration),
+            workers,
+            template: template.clone(),
+            rps,
+            target: target.clone(),
+            shared_metrics: shared_metrics.clone(),
+            csv_tx: csv_tx.clone(),
+            start_time,
+            job: Job::Warmup,
+        })
+        .await;
+    }
+
+    let measurement_start = Instant::now();
+
+    let results = run_phase(PhaseConfig {
+        count: Some(count),
+        duration: None,
+        workers,
+        template,
+        rps,
+        target,
+        shared_metrics,
+        csv_tx,
+        start_time,
+        job: Job::Measured,
+    })
+    .await;
+
+    let measurement_duration = measurement_start.elapsed();
+
+    (results, measurement_duration)
 }
