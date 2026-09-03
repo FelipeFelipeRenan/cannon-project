@@ -115,9 +115,8 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     let target: Arc<cannon::client::target::Target> = if args.mode.to_lowercase() == "tcp" {
         let clean_addr = url_str.replace("http://", "").replace("https://", "");
-        let tcp_target = cannon::client::target::Target::new_tcp(&clean_addr, args.workers)
-            .await
-            .expect("❌ Failed to create TCP target");
+        let tcp_target = cannon::client::target::Target::new_tcp(&clean_addr, args.workers).await?;
+
         Arc::new(tcp_target)
     } else {
         let http_target = cannon::client::target::Target::new_http(
@@ -205,7 +204,7 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let (worker_results, measurement_duration) = engine_handle.await.unwrap_or_default();
+    let (worker_results, measurement_duration) = engine_handle.await??;
     pb.finish_with_message("Finished");
 
     if let Some(path) = &args.csv {

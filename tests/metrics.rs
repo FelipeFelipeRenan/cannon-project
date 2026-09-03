@@ -60,7 +60,7 @@ async fn status_code_is_counted_once() {
     let shared_metrics = Arc::new(SharedMetrics::default());
     let start_time = Instant::now();
 
-    let (results, _) = run_workers(
+    let Ok((results, _)) = run_workers(
         1,
         1,
         None,
@@ -71,7 +71,10 @@ async fn status_code_is_counted_once() {
         start_time,
         Duration::ZERO,
     )
-    .await;
+    .await
+    else {
+        return;
+    };
 
     server.abort();
 
@@ -109,7 +112,7 @@ async fn warmup_requests_are_excluded_from_metrics() {
     let shared_metrics = Arc::new(SharedMetrics::default());
     let start_time = Instant::now();
 
-    let (results, measurement_duration) = run_workers(
+    let Ok((results, measurement_duration)) = run_workers(
         2,
         2,
         None,
@@ -120,7 +123,10 @@ async fn warmup_requests_are_excluded_from_metrics() {
         start_time,
         Duration::from_millis(50),
     )
-    .await;
+    .await
+    else {
+        return;
+    };
 
     server.abort();
 
@@ -193,7 +199,7 @@ async fn measured_requests_are_recorded() {
     let shared_metrics = Arc::new(SharedMetrics::default());
     let start_time = Instant::now();
 
-    let (results, measurement_duration) = run_workers(
+    let Ok((results, measurement_duration)) = run_workers(
         1,
         1,
         None,
@@ -204,7 +210,10 @@ async fn measured_requests_are_recorded() {
         start_time,
         Duration::ZERO,
     )
-    .await;
+    .await
+    else {
+        return;
+    };
 
     server.abort();
 

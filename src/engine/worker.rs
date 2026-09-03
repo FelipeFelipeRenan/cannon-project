@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
+use tokio::task::JoinError;
 
 #[derive(Default)]
 pub struct SharedMetrics {
@@ -93,7 +94,7 @@ fn record_result(
     }
 }
 
-async fn run_phase(config: PhaseConfig) -> Vec<WorkerResult> {
+async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> {
     let PhaseConfig {
         count,
         duration,
@@ -242,7 +243,7 @@ async fn run_phase(config: PhaseConfig) -> Vec<WorkerResult> {
         }
     }
 
-    results
+    Ok(results)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -256,7 +257,7 @@ pub async fn run_workers(
     csv_tx: Option<mpsc::Sender<CsvRecord>>,
     start_time: Instant,
     warmup_duration: Duration,
-) -> (Vec<WorkerResult>, Duration) {
+) -> Result<(Vec<WorkerResult>, Duration), JoinError> {
     if warmup_duration > Duration::ZERO {
         run_phase(PhaseConfig {
             count: None,
@@ -270,7 +271,7 @@ pub async fn run_workers(
             start_time,
             job: Job::Warmup,
         })
-        .await;
+        .await?;
     }
 
     let measurement_start = Instant::now();
@@ -287,9 +288,9 @@ pub async fn run_workers(
         start_time,
         job: Job::Measured,
     })
-    .await;
+    .await?;
 
     let measurement_duration = measurement_start.elapsed();
 
-    (results, measurement_duration)
+    Ok((results, measurement_duration))
 }
