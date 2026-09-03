@@ -36,7 +36,7 @@ pub struct PayloadTemplate {
 }
 
 impl PayloadTemplate {
-    pub fn parse(template: &str) -> Arc<Self> {
+    pub fn parse(template: &str) -> Result<Arc<Self>, Box<dyn std::error::Error>> {
         let mut chunks = Vec::new();
         let mut remaining = template;
 
@@ -48,7 +48,12 @@ impl PayloadTemplate {
                 ));
             }
 
-            let end_idx = remaining.find("}}").expect("Invalid syntax: unclosed tag");
+            let end_idx = remaining.find("}}").ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Invalid syntax: unclosed tag",
+                )
+            })?;
             let tag = &remaining[start_idx + 2..end_idx];
 
             match tag {
@@ -83,7 +88,7 @@ impl PayloadTemplate {
             chunks.push(Chunk::StaticText(remaining.as_bytes().to_vec()));
         }
 
-        Arc::new(Self { chunks })
+        Ok(Arc::new(Self { chunks }))
     }
 
     fn parse_binary_type(s: &str) -> BinaryType {
@@ -116,7 +121,7 @@ impl PayloadTemplate {
                 Chunk::TextTimestamp => {
                     let now = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
-                        .unwrap()
+                        .unwrap_or_default()
                         .as_millis();
                     let mut num_buf = itoa::Buffer::new();
                     buffer.extend_from_slice(num_buf.format(now).as_bytes());
@@ -188,5 +193,25 @@ impl PayloadTemplate {
                 });
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn rejects_unclosed_template_tag() {
+        let result = PayloadTemplate::parse(r#"{"id":"{{uuid"}"#);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parses_valid_template() {
+        let result = PayloadTemplate::parse(r#"{"id":"{{uuid}}"}"#);
+
+        assert!(result.is_ok());
     }
 }

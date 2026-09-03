@@ -109,7 +109,8 @@ async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let template_arc = args
         .body
         .clone()
-        .map(|b| cannon::payload::generator::PayloadTemplate::parse(&b));
+        .map(|body| cannon::payload::generator::PayloadTemplate::parse(&body))
+        .transpose()?;
     let expect_arc = args.expect.clone().map(Arc::new);
 
     let target: Arc<cannon::client::target::Target> = if args.mode.to_lowercase() == "tcp" {
