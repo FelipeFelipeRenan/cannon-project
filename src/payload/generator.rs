@@ -36,6 +36,32 @@ pub struct PayloadTemplate {
 }
 
 impl PayloadTemplate {
+    /// A reusable request payload template.
+    ///
+    /// A template is parsed once and can then be rendered repeatedly into a
+    /// caller-provided buffer. Dynamic placeholders are evaluated on each
+    /// render, making the same template suitable for high-volume load tests.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cannon::payload::generator::PayloadTemplate;
+    ///
+    /// let template = PayloadTemplate::parse(
+    ///     r#"{"user_id":"{{uuid}}","email":"{{email}}"}"#
+    /// )?;
+    ///
+    /// let mut buffer = Vec::new();
+    /// template.render(&mut buffer);
+    ///
+    /// assert!(!buffer.is_empty());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the template contains an unterminated `{{ ... }}`
+    /// placeholder.
     pub fn parse(template: &str) -> Result<Arc<Self>, Box<dyn std::error::Error>> {
         let mut chunks = Vec::new();
         let mut remaining = template;
@@ -104,6 +130,28 @@ impl PayloadTemplate {
         }
     }
 
+    /// Renders the template into `buffer`.
+    ///
+    /// The buffer is cleared before rendering. Reusing the same buffer avoids
+    /// allocating a new `Vec<u8>` for every generated request.
+    ///
+    /// Dynamic values such as `{{uuid}}`, `{{email}}`, and `{{timestamp}}`
+    /// are generated during rendering.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cannon::payload::generator::PayloadTemplate;
+    ///
+    /// let template = PayloadTemplate::parse(r#"{"id":"{{uuid}}"}"#)?;
+    ///
+    /// let mut buffer = Vec::new();
+    /// template.render(&mut buffer);
+    ///
+    /// assert!(buffer.starts_with(b"{\"id\":\""));
+    /// assert!(buffer.ends_with(b"\"}"));
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     #[inline(always)]
     pub fn render(&self, buffer: &mut Vec<u8>) {
         buffer.clear();
