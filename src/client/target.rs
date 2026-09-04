@@ -4,13 +4,36 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
+/// Result of a single request executed against a [`Target`].
+///
+/// `TargetResult` is the boundary between the client layer and the load
+/// testing engine. Each request produces exactly one result, which the
+/// engine can then use to update aggregate metrics.
+///
+/// The fields are protocol-agnostic where possible, allowing the same
+/// structure to represent both HTTP and raw TCP operations.
 pub struct TargetResult {
+    /// Whether the request completed successfully.
+    ///
+    /// A request may be unsuccessful because of a transport or protocol
+    /// error, or because the target returned an unexpected result.
     pub success: bool,
+    /// Time spent executing the request.
     pub duration: Duration,
+    /// HTTP response status code, when the target is HTTP.
+    ///
+    /// This is `None` for raw TCP targets or when no HTTP response was
+    /// received.
     pub status_code: Option<u16>,
+    /// Error description, when the request failed.
     pub error: Option<String>,
+    /// Number of bytes sent to the target.
     pub bytes_sent: u64,
+    /// Number of bytes received from the target.
     pub bytes_received: u64,
+    /// Whether the configured response assertion succeeded.
+    ///
+    /// When no assertion is configured, this is considered successful.
     pub assertion_success: bool,
 }
 
