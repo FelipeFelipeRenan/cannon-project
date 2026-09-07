@@ -62,6 +62,11 @@ impl TargetResult {
     }
 }
 
+/// A load-testing target backed by either HTTP or raw TCP.
+///
+/// `Target` provides a protocol-independent interface to the engine.
+/// Workers can execute requests through [`Target::fire`] without needing
+/// to know which transport is being used.
 pub enum Target {
     Http {
         client: reqwest::Client,
@@ -78,6 +83,11 @@ pub enum Target {
 }
 
 impl Target {
+    /// Creates an HTTP target.
+    ///
+    /// The supplied client is reused across requests, allowing connection
+    /// pooling and avoiding the overhead of creating a new HTTP client for
+    /// every request.
     pub fn new_http(
         client: reqwest::Client,
         url: String,
@@ -94,6 +104,15 @@ impl Target {
         }
     }
 
+    /// Creates a raw TCP target.
+    ///
+    /// The target establishes a pool of TCP connections that can be reused by
+    /// workers during the load test. This avoids creating a new connection for
+    /// every request and allows multiple workers to generate concurrent traffic.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the initial connection pool cannot be established.
     pub async fn new_tcp(address: &str, workers: u32) -> Result<Self, String> {
         let (tx, rx) = async_channel::bounded(workers as usize);
         println!("🔌 Establishing a pool of {} TCP connections...", workers);
@@ -121,6 +140,15 @@ impl Target {
         });
     }
 
+    /// Executes a single request against the target.
+    ///
+    /// For HTTP targets, this sends one HTTP request using the configured
+    /// method, headers, payload, and response assertion. For TCP targets, the
+    /// payload is written to a pooled connection and the target response is
+    /// read according to the TCP transport implementation.
+    ///
+    /// The returned [`TargetResult`] contains the outcome and measurements
+    /// produced by this request.
     #[inline(always)]
     pub async fn fire(&self, payload: &[u8]) -> TargetResult {
         let start = std::time::Instant::now();
