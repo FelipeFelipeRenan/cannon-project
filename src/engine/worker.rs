@@ -8,19 +8,39 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::task::JoinError;
 
+/// Thread-safe metrics shared by all workers during a load test.
+///
+/// Metrics are stored in atomics so workers can update aggregate counters
+/// concurrently without requiring a mutex on the hot path.
+///
+/// Warm-up requests are intentionally excluded from these counters.
 #[derive(Default)]
 pub struct SharedMetrics {
+    /// Number of successful measured requests.
     pub successes: AtomicU64,
+    /// Number of failed measured requests.
     pub failures: AtomicU64,
+    /// Total number of bytes sent by measured requests.
     pub bytes_sent: AtomicU64,
+    /// Total number of bytes received from measured requests.
     pub bytes_received: AtomicU64,
+    /// Number of measured requests completed.
     pub measured_requests: AtomicU64,
 }
 
+/// Result produced by a worker after completing a load-test phase.
+///
+/// A worker accumulates request-level results locally and returns its
+/// aggregate measurements when the phase finishes. The engine combines
+/// the results from all workers to produce the final report.
 pub struct WorkerResult {
+    /// Number of requests completed by this worker.
     pub histogram: Histogram<u64>,
+    /// Number of requests that completed successfully.
     pub status_counts: HashMap<u16, u64>,
+    /// Number of requests that failed.
     pub error_counts: HashMap<String, u64>,
+    /// Number if assertions that failed.
     pub assertion_failures: u64,
 }
 
@@ -246,6 +266,19 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
     Ok(results)
 }
 
+/// Runs the configured workers for a load-test phase.
+///
+/// Workers execute independently and produce a [`WorkerResult`] when the
+/// phase finishes. The returned duration represents the elapsed time of
+/// this phase.
+///
+/// The caller is responsible for determining whether the phase represents
+/// warm-up traffic or measured traffic.
+///
+/// # Errors
+///
+/// Returns a [`tokio::task::JoinError`] if a worker task cannot be joined
+/// successfully.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_workers(
     count: u32,
