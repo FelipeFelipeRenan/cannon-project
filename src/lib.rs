@@ -18,6 +18,7 @@
 //! The library modules expose the underlying building blocks used by the
 //! executable.
 
+#![warn(missing_docs)]
 pub mod args;
 pub mod client;
 pub mod engine;

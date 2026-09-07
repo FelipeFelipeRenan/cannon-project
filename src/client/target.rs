@@ -38,6 +38,10 @@ pub struct TargetResult {
 }
 
 impl TargetResult {
+    /// Creates a successful request result.
+    ///
+    /// The result starts with no HTTP status code or error and marks the
+    /// response assertion as successful.
     pub fn success(duration: Duration, bytes_sent: u64, bytes_received: u64) -> Self {
         Self {
             success: true,
@@ -49,6 +53,11 @@ impl TargetResult {
             assertion_success: true,
         }
     }
+
+    /// Creates a failed request result.
+    ///
+    /// The supplied error message is stored in the result and all byte
+    /// counters are initialized to zero.
     pub fn fail(duration: Duration, error: String) -> Self {
         Self {
             success: false,
@@ -68,16 +77,34 @@ impl TargetResult {
 /// Workers can execute requests through [`Target::fire`] without needing
 /// to know which transport is being used.
 pub enum Target {
+    /// HTTP target backed by a reusable `reqwest` client.
     Http {
+        /// HTTP client used to execute requests.
         client: reqwest::Client,
+
+        /// Target URL.
         url: String,
+
+        /// HTTP method used for requests.
         method: reqwest::Method,
+
+        /// Additional HTTP headers applied to requests.
         headers: Arc<Vec<String>>,
+
+        /// Optional response body content that must be present for an
+        /// assertion to succeed.
         expected_body: Option<Arc<String>>,
     },
+
+    /// Raw TCP target backed by a pool of reusable connections.
     Tcp {
+        /// Channel used to return connections to the TCP pool.
         pool_tx: Sender<TcpStream>,
+
+        /// Channel used to acquire connections from the TCP pool.
         pool_rx: Receiver<TcpStream>,
+
+        /// TCP address of the target.
         address: String,
     },
 }

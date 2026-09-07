@@ -44,10 +44,21 @@ pub struct WorkerResult {
     pub assertion_failures: u64,
 }
 
+/// A single request result formatted for CSV output.
+///
+/// The fields are stored as strings because they are written directly to the
+/// CSV representation of the load-test results.
 pub struct CsvRecord {
+    /// Elapsed time since the beginning of the measurement phase, in milliseconds.
     pub relative_ms: String,
+
+    /// Result status of the request.
     pub status: String,
+
+    /// Request latency in milliseconds.
     pub latency_ms: String,
+
+    /// Error description, if the request failed.
     pub error: String,
 }
 

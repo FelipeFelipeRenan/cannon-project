@@ -1,5 +1,14 @@
 use super::parser::{Args, FileConfig};
 
+/// Merges values from a YAML configuration file into the parsed arguments.
+///
+/// Command-line arguments take precedence over values loaded from the
+/// configuration file.
+///
+/// # Errors
+///
+/// Returns an error if the configuration file cannot be read or its contents
+/// cannot be parsed.
 pub fn merge_with_yaml(args: &mut Args) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(config_path) = &args.config {
         let yaml_str = std::fs::read_to_string(config_path)?;

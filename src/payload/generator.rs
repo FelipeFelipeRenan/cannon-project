@@ -1,36 +1,70 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Byte order used when encoding multi-byte binary values.
 #[derive(Clone)]
 pub enum Endian {
+    /// Most significant byte is stored first.
     Big,
+
+    /// Least significant byte is stored first.
     Little,
 }
 
+/// Binary integer representation supported by payload templates.
 #[derive(Clone)]
 pub enum BinaryType {
+    /// Unsigned 8-bit integer.
     U8,
+
+    /// Unsigned 16-bit integer with the specified byte order.
     U16(Endian),
+
+    /// Unsigned 32-bit integer with the specified byte order.
     U32(Endian),
+
+    /// Unsigned 64-bit integer with the specified byte order.
     U64(Endian),
 }
-
+/// A single component of a compiled payload template.
 #[derive(Clone)]
 pub enum Chunk {
+    /// Static bytes copied directly into the rendered payload.
     StaticText(Vec<u8>),
 
-    // Geradores de Texto (Para HTTP/JSON)
+    /// Generates a random numeric value in textual form.
     TextRandomNumber,
+
+    /// Generates a UUID-like textual identifier.
     TextUuid,
+
+    /// Generates a synthetic email address in textual form.
     TextEmail,
+
+    /// Generates a synthetic username in textual form.
     TextUsername,
+
+    /// Generates the current Unix timestamp in milliseconds.
     TextTimestamp,
 
-    // Geradores Binários (Para TCP)
+    /// Generates a random binary integer using the specified representation.
     BinaryRandomNumber(BinaryType),
-    BinaryFixedValue { value: u64, ty: BinaryType },
+
+    /// Writes a fixed binary integer using the specified representation.
+    BinaryFixedValue {
+        /// Numeric value to encode.
+        value: u64,
+
+        /// Binary representation used to encode the value.
+        ty: BinaryType,
+    },
 }
 
+/// A parsed and reusable request payload template.
+///
+/// A template is compiled into a sequence of [`Chunk`] values and can then
+/// be rendered repeatedly. Static portions are reused while dynamic chunks
+/// generate new values for each request.
 pub struct PayloadTemplate {
     chunks: Vec<Chunk>,
 }

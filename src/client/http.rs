@@ -2,6 +2,14 @@ use crate::args::parser::Args;
 use reqwest::Client;
 use std::time::Duration;
 
+/// Builds the HTTP client used by Cannon.
+///
+/// The client is configured according to the supplied command-line arguments
+/// and is reused across requests to benefit from connection pooling.
+///
+/// # Errors
+///
+/// Returns an error if the underlying HTTP client cannot be constructed.
 pub fn build_optimized_client(args: &Args) -> Result<Client, reqwest::Error> {
     let mut builder = Client::builder()
         .tcp_nodelay(true)
