@@ -1,375 +1,620 @@
-[![Release Cannon](https://github.com/FelipeFelipeRenan/cannon-project/actions/workflows/release.yml/badge.svg)](https://github.com/FelipeFelipeRenan/cannon-project/actions/workflows/release.yml)
+<div align="center">
 
-[![CI Pipeline](https://github.com/FelipeFelipeRenan/cannon-project/actions/workflows/ci.yml/badge.svg)](https://github.com/FelipeFelipeRenan/cannon-project/actions/workflows/ci.yml)
+# 🚀 Cannon
 
-# **🚀 Cannon**
+### High-performance load testing for HTTP & TCP services
 
-```
-      _____          _   _ _   _  ____  _   _
-     / ____|   /\   | \ | | \ | |/ __ \| \ | |
-    | |       /  \  |  \| |  \| | |  | |  \| |
-    | |      / /\ \ | . ` | . ` | |  | | . ` |
-    | |____ / ____ \| |\  | |\  | |__| | |\  |
-     \_____/_/    \_\_| \_|_| \_|\____/|_| \_|
-```
+**Fast. Predictable. Lightweight.**
 
-**The High-Velocity Load Tester**
+[![Release](https://github.com/FelipeFelipeRenan/cannon-project/actions/workflows/release.yml/badge.svg)](https://github.com/FelipeFelipeRenan/cannon-project/actions/workflows/release.yml)
+[![CI](https://github.com/FelipeFelipeRenan/cannon-project/actions/workflows/ci.yml/badge.svg)](https://github.com/FelipeFelipeRenan/cannon-project/actions/workflows/ci.yml)
 
-**Cannon** is a high-performance load testing tool written in **Rust**. Built for mission-critical APIs, it leverages the Tokio async runtime to deliver sub-millisecond precision and extreme concurrency with minimal resource consumption.
+</div>
 
-## **✨ Key Features**
+---
 
-* **⚡ Extremely Fast:** Built in Rust with zero garbage collection. The bottleneck will be your server, not your testing tool.
-* **🎯 Constant RPS Mode:** Integrated metronome logic to fire requests at an exact rate (Requests Per Second) for stable load tests.
-* **🔥 Warm-up Period:** Discard initial metrics during warm-up period to avoid cold-start distortions.
-* **🧬 Dynamic Payloads:** Real-time data generation engine with zero-copy rendering. Use placeholders like `{{user}}`, `{{email}}`, `{{uuid}}`, `{{timestamp}}`, `{{number}}` to simulate unique users.
-* **📊 Comprehensive Reports:** Interactive CLI with real-time RPS counter, ASCII latency histogram, detailed JSON reports, and **interactive HTML dashboard** with Chart.js graphs.
-* **🎯 Apdex Score:** User satisfaction metric based on response times (≤50ms satisfactory, 51-200ms tolerable).
-* **🛠️ Full REST Support:** GET, POST, PUT, PATCH, DELETE with custom headers, configurable user-agent, and dynamic JSON bodies.
-* **🔌 TCP Raw Mode:** Native support for custom binary protocols via direct TCP connections with aggressive connection pooling.
-* **✅ Response Validation:** Assert HTTP response content with the `--expect` flag.
-* **📦 Zero-Dependency Binary:** Single static binary <5MB. Download and run on Linux, macOS, or Windows without installing runtimes.
-* **🔄 Auto-Update:** Automatic update to the latest version with `--update`.
-* **📈 Custom Percentiles:** Configure which latency percentiles you want in the report (default: 50,95,99).
-* **📊 CSV Export:** Export raw data from each request for later analysis in external tools.
-* **🔒 TLS via rustls:** Secure and performant TLS implementation without native dependencies.
-* **💾 MiMalloc Allocator:** Optimized memory allocator to reduce contention in high concurrency scenarios.
-* **🌐 HTTP/2 Support:** Force HTTP/2 Prior Knowledge for h2c/local testing with `--http2`.
-* **⏱️ Connect Timeout:** Separate timeout for establishing TCP connections with `--connect-timeout`.
+Cannon is a **high-performance load testing tool written in Rust** for HTTP APIs and raw TCP services.
 
-## **📦 Installation**
+It is designed around a simple idea:
 
-### **Pre-compiled Binaries (Recommended)**
+> **The load generator should introduce as little overhead as possible so you can focus on the system you're actually testing.**
 
-Download the latest binary for your architecture from the **Releases** page.
+Cannon provides concurrent request generation, constant-RPS workloads, warm-up phases, dynamic payloads, latency histograms, assertions, and structured reports — all delivered as a single command-line tool.
 
-#### Install globally on Linux via cURL:
+---
+
+## ⚡ Why Cannon?
+
+Load testing is more than sending a lot of requests.
+
+A useful load generator needs to answer questions like:
+
+* How much traffic did I actually generate?
+* What happened to tail latency?
+* Did the service remain stable under sustained load?
+* How many requests actually succeeded?
+* What errors occurred?
+* Did the workload behave as expected?
+* How did this run compare with a previous baseline?
+
+Cannon is built to make those questions measurable.
+
+---
+
+# 📦 Installation
+
+You **don't need Rust** to use Cannon.
+
+Pre-built binaries are published with each release.
+
+### One-line installation
+
+**Linux / macOS**
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/FelipeFelipeRenan/cannon-project/main/install.sh | sh
 ```
 
-#### Manual example for Linux:
+The installer downloads the latest compatible release and places `cannon` in `/usr/local/bin`.
+
+Verify:
+
+```bash
+cannon --version
+```
+
+### 🔄 Update
+
+Already have Cannon installed?
+
+```bash
+cannon --update
+```
+
+Cannon can check for and install the latest available release.
+
+### 📥 Manual installation
+
+Pre-built binaries are available on the **[Releases](https://github.com/FelipeFelipeRenan/cannon-project/releases)** page.
+
+For example, on Linux:
 
 ```bash
 chmod +x cannon-linux-x64
 sudo mv cannon-linux-x64 /usr/local/bin/cannon
 ```
 
-#### Verify installation:
+### 🦀 Build from source
 
-```bash
-cannon --version
-```
-
-#### Update to latest version:
-
-```bash
-cannon --update
-```
-
-### **Build from Source**
+For development or unreleased changes:
 
 ```bash
 git clone https://github.com/FelipeFelipeRenan/cannon-project.git
 cd cannon-project
 cargo build --release
-# Binary will be at target/release/cannon
 ```
 
-## **🛠️ CLI Arguments**
+The binary will be available at:
 
-Use these flags to configure your load test.
-
-| Short Flag | Long Flag | Description | Default |
-| :---- | :---- | :---- | :---- |
-| `-u` | `--url` | **(Required)** Target endpoint URL (e.g., `http://localhost:8080/api`). | - |
-| `-f` | `--config` | Path to YAML configuration file. | - |
-| `-c` | `--count` | Total number of requests to fire. | `1` |
-| `-w` | `--workers` | Number of concurrent workers (simultaneous connections). | `10` |
-| `-r` | `--rps` | Limit throughput to a specific RPS (Constant Load). | None |
-| `-X` | `--method` | HTTP Method: GET, POST, PUT, PATCH, DELETE. | `GET` |
-| `-b` | `--body` | JSON payload for the request. Supports dynamic tags. | None |
-| `-o` | `--output` | Path to save detailed report in `.json` format. | None |
-| `-t` | `--timeout` | Timeout in milliseconds to cancel slow requests. | `30000` |
-| `-H` | `--header` | Custom header (e.g., `Authorization: Bearer token`). Repeat for multiple. | None |
-| `-A` | `--user-agent` | Request User-Agent. | `Cannon/1.0` |
-| `-k` | `--insecure` | Ignore TLS/SSL certificate validation. | `false` |
-| | `--mode` | Protocol mode: `http` or `tcp`. | `http` |
-| | `--warmup` | Warm-up time in seconds (metrics discarded). | `0` |
-| | `--expect` | Expected string in response body for validation (assertion). | None |
-| | `--html` | Path to save interactive HTML report with charts. | None |
-| | `--csv` | Path to export raw data in CSV format. | None |
-| | `--apdex-t` | Apdex tolerable time in ms (base for calculation). | `50` |
-| | `--percentiles` | Percentiles for the report (e.g., `50,95,99,99.9`). | `50,95,99` |
-| | `--http2` | Force HTTP/2 Prior Knowledge (useful for localhost/h2c). | `false` |
-| | `--connect-timeout` | Timeout only for establishing TCP connection (ms). | `5000` |
-| | `--update` | Check and install available update. | - |
-
-## **🧬 Dynamic Payload Tags**
-
-When using the `--body` flag, you can inject dynamic data into the JSON to ensure unique requests and bypass database constraints.
-
-| Tag | Substitution Logic | Usage Example |
-| :---- | :---- | :---- |
-| `{{user}}` | Generates random 8-character alphanumeric string (lowercase). | `"username": "user_{{user}}"` |
-| `{{random}}` | Alias for `{{user}}`. | `"id": "req_{{random}}"` |
-| `{{email}}` | Generates random email in format `xxxxxxxx@example.com`. | `"email": "{{email}}"` |
-| `{{number}}` | Generates random integer between 10 and 9999. | `"amount": {{number}}` |
-| `{{uuid}}` | Generates unique UUID v4. | `"requestId": "{{uuid}}"` |
-| `{{timestamp}}` | Generates Unix timestamp in milliseconds. | `"createdAt": {{timestamp}}` |
-
-### **Binary Tags (for TCP Mode)**
-
-For custom binary protocols, use special tags:
-
-| Tag | Description | Example |
-| :---- | :---- | :---- |
-| `{{number:u8}}` | Random u8 number (0-255) | - |
-| `{{number:u16be}}` | Random u16 number big-endian | - |
-| `{{number:u16le}}` | Random u16 number little-endian | - |
-| `{{number:u32be}}` | Random u32 number big-endian | - |
-| `{{number:u32le}}` | Random u32 number little-endian | - |
-| `{{number:u64be}}` | Random u64 number big-endian | - |
-| `{{number:u64le}}` | Random u64 number little-endian | - |
-| `{{value:42:u8}}` | Fixed value 42 as u8 | - |
-| `{{value:1000:u16be}}` | Fixed value 1000 as u16 big-endian | - |
-
-## **🚀 Quick Start**
-
-### **1. Simple Stress Test (GET)**
-
-Fire 5000 requests with 20 concurrent workers:
-
-```bash
-cannon -u http://localhost:8081/api/v1/accounts -c 5000 -w 20
+```text
+target/release/cannon
 ```
 
-### **2. Stable Load Simulation (RPS + Dynamic POST)**
+---
 
-Create 1000 unique accounts at a constant rate of 100 requests per second:
+# 🚀 Quick Start
+
+## Simple HTTP load test
+
+Send 5,000 requests using 20 workers:
 
 ```bash
-cannon -u http://localhost:8081/api/v1/accounts \
-    -c 1000 \
-    -w 10 \
-    -X POST \
-    --rps 100 \
-    --body '{"clientId": "user_{{user}}_test", "currency": "BRL"}'
+cannon \
+  -u http://localhost:8080/api \
+  -c 5000 \
+  -w 20
 ```
 
-### **3. Test with Warm-up Period**
+That's it.
 
-Fire 5000 requests, discarding first 10 seconds of metrics:
+---
+
+## 🎯 Constant-RPS workload
+
+Generate **100 requests per second**:
 
 ```bash
-cannon -u 'http://localhost:8081/api/v1/accounts' \
+cannon \
+  -u http://localhost:8080/api \
+  -c 5000 \
+  -w 20 \
+  --rps 100
+```
+
+Cannon separates the **requested load** from the **measured results**, allowing you to compare the target rate against the actual throughput achieved during the test.
+
+---
+
+## 🔥 Warm-up + measurement
+
+Warm up the service for 10 seconds, then measure 5,000 requests:
+
+```bash
+cannon \
+  -u http://localhost:8080/api \
   -c 5000 \
   -w 20 \
   --rps 100 \
-  --warmup 10 \
-  -H 'Authorization: Bearer your_token'
+  --warmup 10
 ```
 
-### **4. Test with Response Validation (Assertion)**
+The warm-up generates real traffic, but its requests are **excluded from the reported measurements**.
 
-Validate if response body contains the string `admin_privileges`:
+This avoids mixing cold-start behavior with the actual benchmark.
 
-```bash
-cannon -u 'http://api.example.com/v1/user' \
-  --expect 'admin_privileges' \
-  -c 1000 -w 10
-```
+---
 
-### **5. Complete Test with JSON and HTML Export**
+## 🧬 Dynamic payloads
+
+Generate different data for every request:
 
 ```bash
-cannon -u 'http://localhost:8081/api/v1/accounts' \
-  -c 5000 \
-  -w 50 \
-  --rps 200 \
-  --warmup 5 \
+cannon \
+  -u http://localhost:8080/users \
   -X POST \
-  --body '{"userId": "{{uuid}}", "ts": {{timestamp}}, "email": "{{email}}"}' \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer token123' \
-  -A 'CannonLoadTester/2.0' \
-  -t 5000 \
-  --expect '"status":"success"' \
-  -o report.json \
-  --html dashboard.html \
-  --csv results.csv \
-  --percentiles '50,90,95,99,99.9'
+  -c 1000 \
+  --body '{"id":"{{uuid}}","email":"{{email}}"}' \
+  -H 'Content-Type: application/json'
 ```
 
-### **6. TCP Raw Mode (Custom Binary Protocol)**
+Available dynamic values include:
 
-Test a TCP server that echoes bytes:
+| Tag             | Description            |
+| --------------- | ---------------------- |
+| `{{uuid}}`      | UUID v4                |
+| `{{email}}`     | Random email           |
+| `{{username}}`  | Random username        |
+| `{{number}}`    | Random number          |
+| `{{timestamp}}` | Current Unix timestamp |
+
+---
+
+# 📊 What Cannon Measures
+
+Cannon collects latency information using **HdrHistogram** and reports configurable percentiles.
+
+By default:
+
+```text
+p50   p95   p99
+```
+
+You can choose your own:
 
 ```bash
-cannon --mode tcp \
-  -u '127.0.0.1:9999' \
+cannon \
+  -u http://localhost:8080 \
+  -c 10000 \
+  --percentiles 50,90,95,99,99.9
+```
+
+### Terminal output
+
+The final report includes information such as:
+
+* total requests
+* successful requests
+* failed requests
+* actual RPS
+* latency percentiles
+* minimum / average / maximum latency
+* status-code distribution
+* failure breakdown
+* bytes sent / received
+* Apdex
+* target vs actual RPS
+
+The goal is not simply to tell you **"it handled 10k requests."**
+
+The goal is to show **how the system behaved while handling them**.
+
+---
+
+# 📈 Reports
+
+Cannon can export results in multiple formats.
+
+### JSON
+
+```bash
+cannon \
+  -u http://localhost:8080 \
+  -c 5000 \
+  -o report.json
+```
+
+Useful for automation, CI/CD pipelines and post-processing.
+
+### CSV
+
+```bash
+cannon \
+  -u http://localhost:8080 \
+  -c 5000 \
+  --csv results.csv
+```
+
+Exports per-request data for external analysis.
+
+### HTML
+
+```bash
+cannon \
+  -u http://localhost:8080 \
+  -c 5000 \
+  --html dashboard.html
+```
+
+Generates an interactive report with charts and summarized metrics.
+
+---
+
+# 🧪 Response Assertions
+
+You can validate that responses contain an expected value:
+
+```bash
+cannon \
+  -u http://localhost:8080/api/user \
+  -c 1000 \
+  --expect '"status":"success"'
+```
+
+A request can therefore fail not only because the connection failed, but also because the response did not satisfy the expected assertion.
+
+This is particularly useful for automated performance checks.
+
+---
+
+# 🔌 Raw TCP
+
+Cannon is not limited to HTTP.
+
+Use TCP mode for custom protocols and binary payloads:
+
+```bash
+cannon \
+  --mode tcp \
+  -u 127.0.0.1:9000 \
+  -c 1000 \
+  -w 20
+```
+
+Binary payloads can be generated directly:
+
+```text
+{{number:u8}}
+{{number:u16be}}
+{{number:u16le}}
+{{number:u32be}}
+{{number:u32le}}
+{{number:u64be}}
+{{number:u64le}}
+```
+
+Fixed binary values are also supported:
+
+```text
+{{value:42:u8}}
+{{value:1000:u16be}}
+```
+
+This makes Cannon useful for testing services that don't speak HTTP at all.
+
+---
+
+# 🛠️ CLI
+
+Cannon exposes a deliberately small command-line interface.
+
+| Option              | Description                          |
+| ------------------- | ------------------------------------ |
+| `-u, --url`         | Target endpoint                      |
+| `-c, --count`       | Number of measured requests          |
+| `-w, --workers`     | Number of concurrent workers         |
+| `-r, --rps`         | Target request rate                  |
+| `--warmup`          | Warm-up duration                     |
+| `--mode`            | `http` or `tcp`                      |
+| `-X, --method`      | HTTP method                          |
+| `-b, --body`        | Request payload                      |
+| `-H, --header`      | HTTP header                          |
+| `-A, --user-agent`  | User-Agent                           |
+| `-t, --timeout`     | Request timeout                      |
+| `--connect-timeout` | TCP connection timeout               |
+| `--expect`          | Response assertion                   |
+| `--percentiles`     | Custom latency percentiles           |
+| `--apdex-t`         | Apdex threshold                      |
+| `-o, --output`      | JSON report                          |
+| `--csv`             | CSV report                           |
+| `--html`            | HTML report                          |
+| `--http2`           | Force HTTP/2 prior knowledge         |
+| `-k, --insecure`    | Disable TLS certificate verification |
+| `--update`          | Update Cannon                        |
+
+For the complete list:
+
+```bash
+cannon --help
+```
+
+---
+
+# 🧠 Measurement Model
+
+One important design decision in Cannon is the separation between **warm-up traffic** and **measured traffic**.
+
+With:
+
+```bash
+cannon -c 250000 --warmup 4
+```
+
+the execution is conceptually:
+
+```text
+┌──────────────────────┐
+│      Prepare         │
+└──────────┬───────────┘
+           │
+           ▼
+┌──────────────────────┐
+│      Warm-up         │
+│       4 seconds      │
+│                      │
+│   Metrics ignored    │
+└──────────┬───────────┘
+           │
+           ▼
+┌──────────────────────┐
+│     Measurement      │
+│                      │
+│   250,000 requests   │
+│      measured        │
+└──────────┬───────────┘
+           │
+           ▼
+┌──────────────────────┐
+│        Report        │
+└──────────────────────┘
+```
+
+Without warm-up, the requested count represents the measured workload directly.
+
+This makes benchmark runs easier to reason about and compare.
+
+---
+
+# 🏗️ Architecture
+
+Cannon is built around a small set of focused components:
+
+```text
+                         ┌───────────────┐
+                         │   CLI / Args  │
+                         └───────┬───────┘
+                                 │
+                                 ▼
+                         ┌───────────────┐
+                         │     Engine    │
+                         └───────┬───────┘
+                                 │
+                    ┌────────────┴────────────┐
+                    │                         │
+                    ▼                         ▼
+             ┌──────────────┐         ┌──────────────┐
+             │    Workers   │         │    Payload   │
+             │              │         │   Generator  │
+             └──────┬───────┘         └──────────────┘
+                    │
+                    ▼
+             ┌──────────────┐
+             │    Target    │
+             ├──────────────┤
+             │ HTTP │ TCP   │
+             └──────┬───────┘
+                    │
+                    ▼
+                 Service
+                    │
+                    ▼
+             ┌──────────────┐
+             │   Metrics    │
+             │  Histogram   │
+             └──────┬───────┘
+                    │
+                    ▼
+             ┌──────────────┐
+             │    Report    │
+             └──────────────┘
+```
+
+### Core technologies
+
+* **Rust** — systems-level control and predictable runtime characteristics
+* **Tokio** — asynchronous networking and task scheduling
+* **Reqwest** — HTTP client
+* **HdrHistogram** — latency distribution
+* **Clap** — CLI parsing
+* **MiMalloc** — alternative allocator
+* **rustls** — TLS without native OpenSSL dependencies
+
+---
+
+# ⚙️ Design Goals
+
+Cannon is intentionally opinionated.
+
+### Small runtime overhead
+
+The generator itself should not become the bottleneck of the benchmark.
+
+### Predictable workloads
+
+Constant-RPS mode and explicit warm-up/measurement phases make test behavior easier to reason about.
+
+### Reusable connections
+
+HTTP clients and TCP connections are reused instead of creating a new connection for every request.
+
+### Low-level control
+
+Rust makes it possible to control allocation, concurrency, networking and binary payload generation without requiring a large abstraction stack.
+
+### One executable
+
+The end-user experience should be simple:
+
+```text
+install
+  ↓
+cannon
+  ↓
+measure
+  ↓
+report
+```
+
+---
+
+# 🔬 Performance
+
+Performance claims should be backed by measurements rather than marketing numbers.
+
+Cannon therefore includes a performance-oriented architecture and is intended to be benchmarked against representative workloads.
+
+Areas of interest include:
+
+* request throughput
+* latency overhead
+* memory usage
+* allocation behavior
+* concurrency scaling
+* constant-RPS accuracy
+* CPU utilization
+
+Benchmark results will depend heavily on the target protocol, payload, machine, network and workload configuration.
+
+---
+
+# 🤖 CI/CD
+
+Cannon can be used as part of automated performance checks.
+
+For example:
+
+```bash
+cannon \
+  -u "$API_URL/health" \
   -c 1000 \
   -w 20 \
-  --body '{{number:u8}}{{value:42:u8}}{{uuid}}'
+  --expect '"status":"ok"' \
+  -o results.json
 ```
 
-## **🔍 Understanding the Report**
+The generated JSON can then be consumed by scripts or CI pipelines.
 
-At the end of each execution, Cannon provides a surgical analysis of your API health:
-
-### **Terminal Report (CLI)**
-
-* **Percentile Latency:** p50, p95, p99 (or custom) - Essential for identifying "tail latency" that averages hide.
-* **ASCII Histogram:** Visual representation of latency distribution directly in the terminal.
-* **Status Codes:** HTTP response distribution (2xx, 4xx, 5xx) with colors.
-* **Failure Breakdown:** Error list with occurrence count ordered by frequency.
-* **Network Efficiency:** Upload/download throughput in MB/s.
-* **Cannon Efficiency:** Comparison between **Target RPS** vs **Actual RPS** to validate test integrity.
-* **Apdex Score:** User satisfaction index (0.0 to 1.0).
-
-### **JSON Report (`--output`)**
-
-Exports structured metrics for CI/CD integration, dashboards, or later analysis:
-
-```json
-{
-  "target": "http://localhost:8081/api/v1/accounts",
-  "total_requests": 5000,
-  "concurrency": 50,
-  "successes": 4987,
-  "failures": 13,
-  "min_ms": 12.5,
-  "avg_ms": 45.3,
-  "p50_ms": 38.2,
-  "p95_ms": 89.7,
-  "p99_ms": 156.4,
-  "max_ms": 523.1,
-  "actual_rps": 198.6,
-  "apdex_score": 0.92,
-  "bytes_sent": 1048576,
-  "bytes_received": 5242880,
-  "duration_secs": 25.1,
-  "status_codes": { "200": 4987, "500": 13 },
-  "errors": { "Timeout": 5, "Connection Error": 8 }
-}
-```
-
-### **HTML Dashboard (`--html`)**
-
-Interactive dashboard with:
-* Chart.js graphs for latency and status codes
-* Cards with key metrics (Apdex, RPS, Successes/Failures)
-* Button to export PDF
-* Detailed error table
-* Responsive dark theme design
-
-### **CSV Export (`--csv`)**
-
-Raw data from each request for analysis in external tools:
-
-```csv
-relative_time_ms,status,latency_ms,error
-1234,200,45.2,
-1235,200,47.8,
-1236,500,123.4,"Connection Reset"
-```
-
-## **📊 Apdex System**
-
-Cannon automatically calculates the **Application Performance Index (Apdex)**:
-
-* **Satisfactory (≤apdex_t ms):** Full count
-* **Tolerable (apdex_t+1 ms - apdex_t×4 ms):** Half point
-* **Frustrating (>apdex_t×4 ms):** Zero points
-
-**Formula:** `Apdex = (Satisfactory + Tolerable/2) / Total`
-
-The default `apdex_t` value is 50ms, but can be customized with `--apdex-t`.
-
-**Classification:**
-* **≥0.94:** Excellent 🟢
-* **≥0.85:** Good 🟢
-* **≥0.70:** Fair 🟡
-* **≥0.50:** Poor 🟡
-* **<0.50:** Unacceptable 🔴
-
-## **🏗️ Technical Architecture**
-
-Cannon is built on modern distributed systems principles:
-
-* **Producer-Consumer Pattern:** Request engine (Producer) and metrics aggregator (Consumer) communicate via **Asynchronous MPSC Channels** to eliminate memory contention and ensure thread safety.
-* **Backpressure:** Strictly managed concurrency via semaphores to prevent socket exhaustion and memory spikes.
-* **Zero-Copy Rendering:** Payload generator avoids unnecessary allocations with reusable buffers and direct byte formatting.
-* **Polymorphic Enum:** `Target` enum with static dispatch (zero vtable overhead) for HTTP/TCP.
-* **High-Precision Metrics:** Uses **HdrHistogram** to record latencies in microseconds, avoiding the "coordinated omission" problem common in legacy load testers.
-* **Tokio Async Runtime:** Leverages non-blocking I/O and multiplexing for maximum efficiency.
-* **TLS via rustls:** Secure and performant TLS implementation without native dependencies.
-* **MiMalloc Allocator:** Reduces memory contention in high concurrency scenarios.
-* **LTO Optimization:** Highly optimized binary (`lto=true`, `codegen-units=1`, `panic=abort`).
-
-## **📋 Use Case Examples**
-
-### **CI/CD Pipeline Integration**
+Example:
 
 ```bash
-# In your GitHub Actions / GitLab CI pipeline
-cannon -u "$API_URL/health" -c 100 -w 10 --expect '"status":"ok"' -o results.json
-
-# Parse JSON to validate thresholds
-jq '.apdex_score >= 0.9 and .failures == 0' results.json
+jq '.failures == 0' results.json
 ```
 
-### **Soak Test (Endurance Testing)**
+---
+
+# 🧰 Development
+
+Run the test suite:
 
 ```bash
-# 100k requests at 50 RPS constant for ~33 minutes
-cannon -u http://api.prod.com/users -c 100000 --rps 50 -o soak-test.json
+cargo test
 ```
 
-### **Spike Test (Traffic Surge)**
+Run documentation tests:
 
 ```bash
-# Sudden spike of 500 RPS for 60 seconds
-cannon -u http://api.prod.com/checkout -c 30000 --rps 500 -w 100
+cargo test --doc
 ```
 
-### **Cache Validation**
+Run Clippy:
 
 ```bash
-# First request (cache miss) vs subsequent (cache hit)
-cannon -u http://cdn.example.com/assets/logo.png -c 1000 --rps 100
+cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-### **Binary Protocol Testing**
+Build the optimized binary:
 
 ```bash
-# Test TCP server with custom protocol
-cannon --mode tcp -u '127.0.0.1:9999' -c 5000 -w 50 --body '{{value:1:u8}}{{number:u32le}}'
+cargo build --release
 ```
 
-## **⚠️ Important Considerations**
+Generate API documentation:
 
-* **System Limits:** Adjust `ulimit -n` (file descriptors) for high concurrency tests. For >10k workers, may need 65535+.
-* **Network Bandwidth:** High RPS tests can saturate your local network connection.
-* **Target Capacity:** Ensure the target can handle the generated load to avoid false positives.
-* **Rate Limiting:** APIs with rate limiting may return 429 Too Many Requests during intensive tests.
-* **Warm-up Usage:** Use `--warmup` when testing systems that need initial stabilization (JIT warming, connection pools, etc).
-* **TCP Pool:** In TCP mode, the number of workers defines the connection pool size. Connections are aggressively reused.
+```bash
+cargo doc --no-deps
+```
 
-## **🤝 Contributing**
+---
 
-Contributions are welcome! Feel free to:
+# 🗺️ Roadmap
 
-1. Fork the repository
-2. Create a branch for your feature (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+Cannon is actively evolving.
 
-## **📄 License**
+### Completed
 
-Distributed under the MIT License. See `LICENSE` for more information.
+* [x] HTTP load testing
+* [x] Raw TCP mode
+* [x] Concurrent workers
+* [x] Constant-RPS scheduling
+* [x] Warm-up phases
+* [x] Dynamic payload generation
+* [x] Binary payload generation
+* [x] Response assertions
+* [x] Latency histograms
+* [x] Custom percentiles
+* [x] JSON reports
+* [x] CSV export
+* [x] HTML reports
+* [x] Apdex
+* [x] Baseline comparison
+* [x] CPU affinity
+* [x] Automatic updates
+
+### Planned
+
+* [ ] Distributed load generation
+* [ ] Chaos engineering workloads
+* [ ] More benchmark tooling
+* [ ] Additional protocol capabilities
+
+---
+
+# 📜 License
+
+Cannon is open source and distributed under the terms of the project's license.
+
+See [`LICENSE`](LICENSE) for details.
+
+---
+
+<div align="center">
+
+### Built in Rust 🦀
+
+**Cannon — generate the load. Measure the system.**
+
+</div>
+
+
 
 ### **👨‍💻 Author**
 
@@ -377,6 +622,3 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 *"Robust systems require relentless testing."*
 
----
-
-**Version:** 2.1.0 | **Build:** LTO-optimized Release | **Edition:** Rust 2021
