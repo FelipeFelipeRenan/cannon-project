@@ -5,47 +5,117 @@ use hdrhistogram::Histogram;
 use serde::Serialize;
 use tabled::Tabled;
 
+/// Aggregated results produced by a Cannon load test.
+///
+/// `FinalReport` contains the measurements collected during the test,
+/// including request counts, latency statistics, throughput, network
+/// traffic, response status codes, errors, and Apdex score.
+///
+/// The structure derives [`Serialize`] so that the report can also be
+/// exported to formats such as JSON and consumed by the HTML reporter.
+/// It also derives [`Tabled`] for tabular terminal output.
 #[derive(Serialize, Tabled)]
 pub struct FinalReport {
+    /// Target URL or address used by the test.
     #[tabled(rename = "Target URL")]
     pub target: String,
+
+    /// Total number of requests executed during the measurement phase.
     #[tabled(rename = "Total")]
     pub total_requests: u32,
+
+    /// Number of concurrent workers used to generate load.
     #[tabled(rename = "Workers")]
     pub concurrency: u32,
+
+    /// Number of requests that completed successfully.
     #[tabled(rename = "Success")]
     pub successes: u64,
+
+    /// Number of requests that failed.
     #[tabled(rename = "Failures")]
     pub failures: u64,
+
+    /// Minimum observed latency in milliseconds.
     pub min_ms: f64,
+
+    /// Mean observed latency in milliseconds.
     pub avg_ms: f64,
+
+    /// 50th percentile latency in milliseconds.
     pub p50_ms: f64,
+
+    /// 95th percentile latency in milliseconds.
     pub p95_ms: f64,
+
+    /// 99th percentile latency in milliseconds.
     pub p99_ms: f64,
+
+    /// Maximum observed latency in milliseconds.
     pub max_ms: f64,
 
+    /// Requests per second actually achieved during the measurement phase.
     pub actual_rps: f64,
+
+    /// Total number of bytes sent to the target.
     pub bytes_sent: u64,
+
+    /// Total number of bytes received from the target.
     pub bytes_received: u64,
+
+    /// Distribution of response status codes observed during the test.
     #[tabled(skip)]
     pub status_codes: HashMap<u16, u64>,
+
+    /// Distribution of errors observed during the test.
     #[tabled(skip)]
     pub errors: HashMap<String, u64>,
+
+    /// Total measurement duration in seconds.
     pub duration_secs: f64,
 
+    /// Apdex score calculated from the test results.
     pub apdex_score: f64,
 }
 
+/// A single latency metric formatted for terminal presentation.
+///
+/// `LatencyMetrics` is used internally by the CLI reporter to transform
+/// numerical latency measurements into rows suitable for [`tabled`].
 #[derive(Tabled)]
 pub struct LatencyMetrics {
+    /// Human-readable name of the latency metric.
     pub metric: String,
+
+    /// Formatted value displayed for the metric.
     pub value: String,
 }
 
+/// Converts a duration expressed in microseconds to milliseconds.
+///
+/// Cannon stores latency measurements in microseconds because the
+/// underlying histogram operates on integer microsecond values. This
+/// helper converts those measurements to milliseconds for human-readable
+/// reports.
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(cannon::report::cli::to_ms(1_000), 1.0);
+/// assert_eq!(cannon::report::cli::to_ms(500), 0.5);
+/// assert_eq!(cannon::report::cli::to_ms(1_500_000), 1500.0);
+/// ```
 pub fn to_ms(us: u64) -> f64 {
     us as f64 / 1000.0
 }
 
+/// Renders a latency histogram as an ASCII distribution in the terminal.
+///
+/// The histogram is divided into approximately ten linear buckets. Each
+/// bucket displays its upper latency boundary, request count, percentage
+/// of the total observations, and a proportional bar.
+///
+/// Nothing is printed when the histogram contains no observations.
 pub fn render_ascii_histogram(hist: &hdrhistogram::Histogram<u64>) {
     println!("\n{}", "📊 LATENCY DISTRIBUTION".bold().bright_white());
 
@@ -88,6 +158,17 @@ pub fn render_ascii_histogram(hist: &hdrhistogram::Histogram<u64>) {
         }
     }
 }
+
+/// Generates an HTML report from a serialized report payload.
+///
+/// Cannon embeds the HTML dashboard template into the binary at compile
+/// time and injects the provided JSON payload into the template before
+/// writing the resulting document to `path`.
+///
+/// # Errors
+///
+/// Returns an [`std::io::Error`] if the generated HTML cannot be written
+/// to the specified path.
 pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()> {
     let template = include_str!("../../templates/dashboard.html");
     let final_html = template.replace("/*JSON_PAYLOAD*/", report_json);
@@ -95,6 +176,38 @@ pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()
     Ok(())
 }
 
+/// Prints the complete load-test summary to the terminal.
+///
+/// The summary includes:
+///
+/// - successful and failed requests;
+/// - latency statistics and configured percentiles;
+/// - latency distribution;
+/// - HTTP status-code distribution;
+/// - failure details;
+/// - assertion failures;
+/// - network traffic and throughput;
+/// - target and achieved RPS;
+/// - total test duration.
+///
+/// `target_rps` is optional because Cannon can also run without a fixed
+/// RPS target. When it is absent, the report displays the measured mean
+/// RPS instead.
+///
+/// # Arguments
+///
+/// * `successes` - Number of successful requests.
+/// * `failures` - Number of failed requests.
+/// * `hist` - Latency histogram collected during measurement.
+/// * `total` - Total measurement duration.
+/// * `target_rps` - Configured target RPS, if constant-rate load is enabled.
+/// * `actual_rps` - RPS actually achieved by the test.
+/// * `status_counts` - Response status-code distribution.
+/// * `error_counts` - Error distribution.
+/// * `assertion_failures` - Number of failed response assertions.
+/// * `bytes_sent` - Total bytes sent to the target.
+/// * `bytes_recv` - Total bytes received from the target.
+/// * `percentiles` - Latency quantiles to display.
 #[allow(clippy::too_many_arguments)]
 pub fn print_summary(
     successes: u64,
@@ -192,11 +305,9 @@ pub fn print_summary(
     if !error_counts.is_empty() {
         println!("\n{}", "❌ FAILURES DETAILS".bold().red());
 
-        // Converts to vector and sorts (highest error count at top)
         let mut sorted_errors: Vec<_> = error_counts.into_iter().collect();
         sorted_errors.sort_by_key(|item| std::cmp::Reverse(item.1));
         for (err, count) in sorted_errors {
-            // Calculates percentage relative to total failures
             let perc = (count as f64 / failures as f64) * 100.0;
             println!(
                 "  {:<30} {:>6} ({:>4.1}%)",
@@ -218,7 +329,7 @@ pub fn print_summary(
 
     println!("\n{}", "📈 EFFICIENCY AND NETWORK".bold().bright_white());
 
-    let sent_mb = bytes_sent as f64 / 1_048_576.0; // Divides by 1024^2
+    let sent_mb = bytes_sent as f64 / 1_048_576.0;
     let recv_mb = bytes_recv as f64 / 1_048_576.0;
 
     let total_secs = total.as_secs_f64();
@@ -259,6 +370,7 @@ pub fn print_summary(
     println!("Test finished in {}s", total.as_secs());
 }
 
+/// Prints Cannon's startup banner to the terminal.
 pub fn print_banner() {
     let banner = r#"
       _____          _   _ _   _  ____  _   _ 
@@ -268,6 +380,7 @@ pub fn print_banner() {
     | |____ / ____ \| |\  | |\  | |__| | |\  |
      \_____/_/    \_\_| \_|_| \_|\____/|_| \_|
     "#;
+
     println!("{}", banner.bright_red().bold());
     println!(
         "{}",
@@ -284,7 +397,6 @@ mod tests {
 
     #[test]
     fn test_to_ms_conversion() {
-        // to_ms converts microseconds (us) to milliseconds (ms)
         assert_eq!(to_ms(1_000), 1.0);
         assert_eq!(to_ms(500), 0.5);
         assert_eq!(to_ms(1_500_000), 1500.0);
