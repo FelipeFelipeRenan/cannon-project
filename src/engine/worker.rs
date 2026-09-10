@@ -269,9 +269,7 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
     let mut results = Vec::with_capacity(handles.len());
 
     for handle in handles {
-        if let Ok(result) = handle.await {
-            results.push(result);
-        }
+        results.push(handle.await?);
     }
 
     Ok(results)

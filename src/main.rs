@@ -59,15 +59,6 @@ async fn run_app(
     args.validate()
         .map_err(|error| format!("invalid configuration: {error}"))?;
 
-    if let Err(e) = cannon::args::config::merge_with_yaml(&mut args, &matches) {
-        eprintln!(
-            "{} Failed to load YAML configuration: {}",
-            "❌ Error:".red().bold(),
-            e
-        );
-        std::process::exit(1);
-    }
-
     let url_str = if args.mode.to_lowercase() == "tcp" {
         args.url
             .clone()
