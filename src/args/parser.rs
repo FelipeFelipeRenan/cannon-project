@@ -279,6 +279,61 @@ pub struct Args {
     pub update: bool,
 }
 
+impl Args {
+    /// Validates the final Cannon configuration before starting a load test.
+    ///
+    /// This validation must run after command-line arguments and YAML
+    /// configuration have been merged.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error describing the first invalid configuration value.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.count == 0 {
+            return Err("count must be greater than 0".to_string());
+        }
+
+        if self.workers == 0 {
+            return Err("workers must be greater than 0".to_string());
+        }
+
+        if self.rps == Some(0) {
+            return Err("rps must be greater than 0".to_string());
+        }
+
+        if self.timeout == 0 {
+            return Err("timeout must be greater than 0".to_string());
+        }
+
+        if self.connect_timeout == 0 {
+            return Err("connect_timeout must be greater than 0".to_string());
+        }
+
+        if self.apdex_t == 0 {
+            return Err("apdex_t must be greater than 0".to_string());
+        }
+
+        if self.tolerance < 0.0 {
+            return Err("tolerance must be greater than or equal to 0".to_string());
+        }
+
+        for percentile in self.percentiles.split(',') {
+            let percentile = percentile
+                .trim()
+                .parse::<f64>()
+                .map_err(|_| format!("invalid percentile: '{percentile}'"))?;
+
+            if !(percentile > 0.0 && percentile <= 100.0) {
+                return Err(format!(
+                    "percentile must be greater than 0 and less than or equal to 100: {percentile}"
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// Configuration loaded from a Cannon YAML configuration file.
 ///
 /// `FileConfig` contains the options that can be supplied through a YAML
@@ -397,6 +452,83 @@ mod tests {
         assert_eq!(
             args.apdex_t, 50,
             "Apdex tolerable time should be 50ms by default"
+        );
+    }
+
+    #[test]
+    fn test_validation_accepts_valid_configuration() {
+        let args = Args::try_parse_from([
+            "cannon",
+            "-u",
+            "http://localhost",
+            "-c",
+            "1000",
+            "-w",
+            "4",
+            "--rps",
+            "500",
+            "--percentiles",
+            "50,95,99,99.9",
+        ])
+        .unwrap();
+
+        assert!(args.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validation_rejects_zero_count() {
+        let mut args = Args::try_parse_from(["cannon", "-u", "http://localhost"]).unwrap();
+        args.count = 0;
+
+        assert_eq!(args.validate().unwrap_err(), "count must be greater than 0");
+    }
+
+    #[test]
+    fn test_validation_rejects_zero_workers() {
+        let mut args = Args::try_parse_from(["cannon", "-u", "http://localhost"]).unwrap();
+        args.workers = 0;
+
+        assert_eq!(
+            args.validate().unwrap_err(),
+            "workers must be greater than 0"
+        );
+    }
+
+    #[test]
+    fn test_validation_rejects_zero_rps() {
+        let mut args = Args::try_parse_from(["cannon", "-u", "http://localhost"]).unwrap();
+        args.rps = Some(0);
+
+        assert_eq!(args.validate().unwrap_err(), "rps must be greater than 0");
+    }
+
+    #[test]
+    fn test_validation_rejects_zero_timeout() {
+        let mut args = Args::try_parse_from(["cannon", "-u", "http://localhost"]).unwrap();
+        args.timeout = 0;
+
+        assert_eq!(
+            args.validate().unwrap_err(),
+            "timeout must be greater than 0"
+        );
+    }
+
+    #[test]
+    fn test_validation_rejects_invalid_percentile() {
+        let mut args = Args::try_parse_from(["cannon", "-u", "http://localhost"]).unwrap();
+        args.percentiles = "50,95,101".to_string();
+
+        assert!(args.validate().is_err());
+    }
+
+    #[test]
+    fn test_validation_rejects_negative_tolerance() {
+        let mut args = Args::try_parse_from(["cannon", "-u", "http://localhost"]).unwrap();
+        args.tolerance = -1.0;
+
+        assert_eq!(
+            args.validate().unwrap_err(),
+            "tolerance must be greater than or equal to 0"
         );
     }
 }

@@ -56,6 +56,9 @@ async fn run_app(
         return Ok(());
     }
 
+    args.validate()
+        .map_err(|error| format!("invalid configuration: {error}"))?;
+
     if let Err(e) = cannon::args::config::merge_with_yaml(&mut args, &matches) {
         eprintln!(
             "{} Failed to load YAML configuration: {}",
