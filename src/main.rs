@@ -277,57 +277,47 @@ async fn run_app(
             "rps": actual_rps
         });
 
-        if let Ok(json_str) = serde_json::to_string_pretty(&baseline_data) {
-            let _ = std::fs::write(path, json_str);
-            println!(
-                "\n💾 Performance baseline saved successfully to: {}",
-                path.bright_green()
-            );
-        }
+        let json_str = serde_json::to_string_pretty(&baseline_data)?;
+        std::fs::write(path, json_str)?;
+
+        println!(
+            "\n💾 Performance baseline saved successfully to: {}",
+            path.bright_green()
+        );
     }
 
     if let Some(path) = &args.compare_baseline {
-        if let Ok(content) = std::fs::read_to_string(path) {
-            if let Ok(baseline) = serde_json::from_str::<serde_json::Value>(&content) {
-                let base_p99 = baseline["p99_ms"].as_f64().unwrap_or(0.0);
+        let content = std::fs::read_to_string(path)?;
+        let baseline = serde_json::from_str::<serde_json::Value>(&content)?;
 
-                println!("\n⚖️  {}", "BASELINE ANALISYS (CI/CD)".bright_blue().bold());
-                println!("   Historic P99: {:.2}ms", base_p99);
-                println!("   Current P99:     {:.2}ms", current_p99_ms);
+        let base_p99 = baseline["p99_ms"]
+            .as_f64()
+            .ok_or("baseline is missing a valid 'p99_ms' value")?;
 
-                if current_p99_ms > base_p99 {
-                    let degradation = ((current_p99_ms - base_p99) / base_p99) * 100.0;
-                    println!(
-                        "   Variation:      +{} worst",
-                        format!("{:.2}%", degradation).yellow()
-                    );
+        if base_p99 <= 0.0 {
+            return Err("baseline 'p99_ms' must be greater than 0".into());
+        }
 
-                    if degradation > args.tolerance {
-                        println!(
-                            "\n❌ {} Tolerance of {}% exceeded. Aborting with error...",
-                            "PERFORMANCE REGRESSION DETECTED!".red().bold(),
-                            args.tolerance
-                        );
-                        std::process::exit(1);
-                    } else {
-                        println!(
-                            "\n✅ Accepted regression. Whintin tolerance of {}%.",
-                            args.tolerance
-                        );
-                    }
-                } else {
-                    let improvement = ((base_p99 - current_p99_ms) / base_p99) * 100.0;
-                    println!(
-                        "   Variation:      -{} better",
-                        format!("{:.2}%", improvement).green()
-                    );
-                    println!("\n✅ Performance improved or remained constant!");
-                }
+        if current_p99_ms > base_p99 {
+            let degradation = ((current_p99_ms - base_p99) / base_p99) * 100.0;
+
+            println!(
+                "\n⚠️ Performance degradation: {:.2}% slower than baseline",
+                degradation
+            );
+
+            if degradation > args.tolerance {
+                println!(
+                    "❌ Regression detected: degradation exceeds tolerance of {:.2}%",
+                    args.tolerance
+                );
             }
         } else {
+            let improvement = ((base_p99 - current_p99_ms) / base_p99) * 100.0;
+
             println!(
-                "\n⚠️ Warning: Baseline file '{}' not found. Comparison skipped.",
-                path.yellow()
+                "\n🚀 Performance improvement: {:.2}% faster than baseline",
+                improvement
             );
         }
     }
