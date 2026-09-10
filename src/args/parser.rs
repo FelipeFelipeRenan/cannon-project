@@ -335,7 +335,7 @@ pub struct FileConfig {
     pub mode: Option<String>,
 
     /// Duration of the warm-up phase in seconds.
-    pub warmup: u64,
+    pub warmup: Option<u64>,
 
     /// File used to save the performance baseline.
     pub save_baseline: Option<String>,
@@ -344,10 +344,10 @@ pub struct FileConfig {
     pub compare_baseline: Option<String>,
 
     /// Maximum allowed latency regression percentage.
-    pub tolerance: f64,
+    pub tolerance: Option<f64>,
 
     /// Pin Tokio worker threads to CPU cores.
-    pub pin_threads: bool,
+    pub pin_threads: Option<bool>,
 }
 
 #[cfg(test)]

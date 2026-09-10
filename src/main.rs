@@ -5,7 +5,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use cannon::args::parser::Args;
 use cannon::report::cli::{generate_html_report, print_banner, print_summary, to_ms, FinalReport};
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches};
 use colored::Colorize;
 use hdrhistogram::Histogram;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -15,7 +15,9 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
+    let command = Args::command();
+    let matches = command.get_matches();
+    let args = Args::from_arg_matches(&matches)?;
 
     if args.pin_threads {
         let core_ids = core_affinity::get_core_ids().expect("❌ Error reading CPU topology");
@@ -37,22 +39,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
             .build()?;
 
-        rt.block_on(async { run_app(args).await })
+        rt.block_on(async { run_app(args, matches).await })
     } else {
         let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(async { run_app(args).await })
+        rt.block_on(async { run_app(args, matches).await })
     }
 }
 
-async fn run_app(_args: Args) -> Result<(), Box<dyn std::error::Error>> {
-    let mut args = Args::parse();
-
+async fn run_app(
+    mut args: Args,
+    matches: clap::ArgMatches,
+) -> Result<(), Box<dyn std::error::Error>> {
+    cannon::args::config::merge_with_yaml(&mut args, &matches)?;
     if args.update {
         update()?;
         return Ok(());
     }
 
-    if let Err(e) = cannon::args::config::merge_with_yaml(&mut args) {
+    if let Err(e) = cannon::args::config::merge_with_yaml(&mut args, &matches) {
         eprintln!(
             "{} Failed to load YAML configuration: {}",
             "❌ Error:".red().bold(),
