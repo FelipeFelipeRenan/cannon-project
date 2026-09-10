@@ -145,24 +145,27 @@ async fn run_app(
 
     // Configuração do CSV Assíncrono
     let mut csv_tx = None;
+    let mut csv_handle = None;
+
     if let Some(path) = &args.csv {
         let (tx, mut rx) = mpsc::channel::<cannon::engine::worker::CsvRecord>(buffer_size);
         csv_tx = Some(tx);
         let path_clone = path.clone();
 
-        // Spawn Background Worker pro I/O de disco
-        tokio::spawn(async move {
-            if let Ok(mut w) = csv::Writer::from_path(&path_clone) {
-                let _ = w.write_record(["relative_time_ms", "status", "latency_ms", "error"]);
-                while let Some(rec) = rx.recv().await {
-                    let _ =
-                        w.write_record(&[rec.relative_ms, rec.status, rec.latency_ms, rec.error]);
-                }
-                let _ = w.flush();
-            }
-        });
-    }
+        csv_handle = Some(tokio::spawn(async move {
+            let mut writer = csv::Writer::from_path(&path_clone)?;
 
+            writer.write_record(["relative_time_ms", "status", "latency_ms", "error"])?;
+
+            while let Some(rec) = rx.recv().await {
+                writer.write_record([rec.relative_ms, rec.status, rec.latency_ms, rec.error])?;
+            }
+
+            writer.flush()?;
+
+            Ok::<(), csv::Error>(())
+        }));
+    }
     let engine_handle = tokio::spawn(cannon::engine::worker::run_workers(
         args.count,
         args.workers,
@@ -205,8 +208,12 @@ async fn run_app(
     let (worker_results, measurement_duration) = engine_handle.await??;
     pb.finish_with_message("Finished");
 
-    if let Some(path) = &args.csv {
-        println!("📊 Raw data exported to {}!", path.bright_cyan());
+    if let Some(handle) = csv_handle {
+        handle.await??;
+
+        if let Some(path) = &args.csv {
+            println!("📊 Raw data exported to {}!", path.bright_cyan());
+        }
     }
 
     // Merging local reports (The final merge)
