@@ -2,7 +2,7 @@ name: Release Cannon
 
 on:
   push:
-    tags: 
+    tags:
       - "v*"
       - "*.*.*"
 
@@ -13,14 +13,17 @@ jobs:
   build:
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             asset_name: cannon-linux-x64
+
           - os: windows-latest
             asset_name: cannon-windows-x64.exe
+
           - os: macos-latest
             asset_name: cannon-macos-x64
 
@@ -36,8 +39,10 @@ jobs:
 
       - name: Prepare Binary (Unix)
         if: matrix.os != 'windows-latest'
+        shell: bash
         run: |
           cd target/release
+
           if [ -f "cannon" ]; then
             mv "cannon" "${{ matrix.asset_name }}"
           elif [ -f "cannon-project" ]; then
@@ -52,6 +57,7 @@ jobs:
         shell: bash
         run: |
           cd target/release
+
           if [ -f "cannon.exe" ]; then
             mv "cannon.exe" "${{ matrix.asset_name }}"
           elif [ -f "cannon-project.exe" ]; then
@@ -61,9 +67,42 @@ jobs:
             exit 1
           fi
 
-      - name: Upload binaries to Release
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: target/release/${{ matrix.asset_name }}
+
+  release:
+    name: Publish release
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate SHA256 checksums
+        working-directory: release-assets
+        run: |
+          sha256sum cannon-linux-x64 \
+                    cannon-macos-x64 \
+                    cannon-windows-x64.exe \
+            > SHA256SUMS
+
+          echo "Generated checksums:"
+          cat SHA256SUMS
+
+      - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/${{ matrix.asset_name }}
+          files: |
+            release-assets/cannon-linux-x64
+            release-assets/cannon-macos-x64
+            release-assets/cannon-windows-x64.exe
+            release-assets/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
