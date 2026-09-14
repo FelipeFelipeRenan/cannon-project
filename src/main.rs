@@ -65,6 +65,7 @@ async fn run_app(
             .expect("❌ Error: The address (IP:Port) from the target is required!")
     } else {
         cannon::security::url_validator::validate_and_extract(&args.url)
+            .map_err(|error| format!("invalid target URL: {error}"))?
     };
 
     let parsed_percentiles: Vec<f64> = args

@@ -110,7 +110,12 @@ fn record_result(
         .bytes_received
         .fetch_add(res.bytes_received, Ordering::Relaxed);
 
-    let _ = histogram.record(res.duration.as_micros() as u64);
+    let latency_us = res.duration.as_micros() as u64;
+    let latency_us = latency_us.min(60_000_000);
+
+    histogram
+        .record(latency_us)
+        .expect("latency must fit histogram bounds");
 
     if let Some(code) = res.status_code {
         *status_counts.entry(code).or_insert(0) += 1;
