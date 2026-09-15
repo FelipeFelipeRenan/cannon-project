@@ -96,6 +96,12 @@ async fn run_app(
 
     let warmup_duration = std::time::Duration::from_secs(args.warmup);
 
+    let ramp_up_duration = args
+        .ramp_up
+        .as_deref()
+        .map(cannon::args::parser::parse_ramp_up_duration)
+        .transpose()?;
+
     if args.warmup > 0 {
         println!(
             "🔥 Warm-up Mode active: Disregarding the first {}s of metrics...",
@@ -176,6 +182,7 @@ async fn run_app(
         csv_tx,
         start_test,
         warmup_duration,
+        ramp_up_duration,
     ));
 
     let mut last_total = 0;

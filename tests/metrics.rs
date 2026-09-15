@@ -70,6 +70,7 @@ async fn status_code_is_counted_once() {
         None,
         start_time,
         Duration::ZERO,
+        None,
     )
     .await
     else {
@@ -122,6 +123,7 @@ async fn warmup_requests_are_excluded_from_metrics() {
         None,
         start_time,
         Duration::from_millis(50),
+        None,
     )
     .await
     else {
@@ -209,6 +211,7 @@ async fn measured_requests_are_recorded() {
         None,
         start_time,
         Duration::ZERO,
+        None,
     )
     .await
     else {

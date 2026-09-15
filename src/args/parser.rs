@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use clap::{ArgAction, Parser, ValueHint};
 use serde::Deserialize;
 
@@ -106,8 +108,8 @@ pub struct Args {
     )]
     pub warmup: u64,
 
-    /// Gradually increase the load over the specified duration.
-    #[arg(long, value_name = "DURATION", help_heading = "Load")]
+    /// Gradually increase the request rate from zero to the configured RPS
+    /// over the specified duration.    #[arg(long, value_name = "DURATION", help_heading = "Load")]
     pub ramp_up: Option<String>,
 
     // ─────────────────────────────────────────────────────────────────────
@@ -301,6 +303,14 @@ impl Args {
             return Err("rps must be greater than 0".to_string());
         }
 
+        if let Some(ramp_up) = &self.ramp_up {
+            if self.rps.is_none() {
+                return Err("ramp-up requires rps to be configured".to_string());
+            }
+
+            parse_ramp_up_duration(ramp_up)?;
+        }
+
         if self.timeout == 0 {
             return Err("timeout must be greater than 0".to_string());
         }
@@ -409,6 +419,53 @@ pub struct FileConfig {
     pub pin_threads: Option<bool>,
 }
 
+/// Parses a ramp-up duration from a human-readable value.
+///
+/// Supported units are milliseconds (`ms`), seconds (`s`), and minutes (`m`).
+pub fn parse_ramp_up_duration(value: &str) -> Result<Duration, String> {
+    let value = value.trim();
+
+    if value.is_empty() {
+        return Err("ramp-up duration cannot be empty".to_string());
+    }
+
+    let (number, unit) = if let Some(number) = value.strip_suffix("ms") {
+        (number, "ms")
+    } else if let Some(number) = value.strip_suffix('s') {
+        (number, "s")
+    } else if let Some(number) = value.strip_suffix('m') {
+        (number, "m")
+    } else {
+        return Err(format!(
+            "invalid ramp-up duration '{value}': expected a value ending in ms, s, or m"
+        ));
+    };
+
+    let number = number
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| format!("invalid ramp-up duration '{value}'"))?;
+
+    if !number.is_finite() || number <= 0.0 {
+        return Err("ramp-up duration must be greater than 0".to_string());
+    }
+
+    let seconds = match unit {
+        "ms" => number / 1_000.0,
+        "s" => number,
+        "m" => number * 60.0,
+        _ => unreachable!(),
+    };
+
+    let duration = Duration::try_from_secs_f64(seconds)
+        .map_err(|_| format!("ramp-up duration is out of range: '{value}'"))?;
+
+    if duration.is_zero() {
+        return Err("ramp-up duration is too small".to_string());
+    }
+
+    Ok(duration)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -560,5 +617,46 @@ mod tests {
         let error = args.validate().unwrap_err();
 
         assert!(error.contains("invalid HTTP method"));
+    }
+    #[test]
+    fn parses_ramp_up_seconds() {
+        let duration = parse_ramp_up_duration("10s").unwrap();
+
+        assert_eq!(duration, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn parses_ramp_up_milliseconds() {
+        let duration = parse_ramp_up_duration("500ms").unwrap();
+
+        assert_eq!(duration, Duration::from_millis(500));
+    }
+
+    #[test]
+    fn parses_ramp_up_minutes() {
+        let duration = parse_ramp_up_duration("2m").unwrap();
+
+        assert_eq!(duration, Duration::from_secs(120));
+    }
+
+    #[test]
+    fn rejects_zero_ramp_up() {
+        let error = parse_ramp_up_duration("0s").unwrap_err();
+
+        assert!(error.contains("greater than 0"));
+    }
+
+    #[test]
+    fn rejects_invalid_ramp_up_unit() {
+        let error = parse_ramp_up_duration("10h").unwrap_err();
+
+        assert!(error.contains("expected a value ending in ms, s, or m"));
+    }
+
+    #[test]
+    fn rejects_invalid_ramp_up_value() {
+        let error = parse_ramp_up_duration("banana").unwrap_err();
+
+        assert!(error.contains("invalid ramp-up duration"));
     }
 }

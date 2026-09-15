@@ -74,6 +74,7 @@ struct PhaseConfig {
     workers: u32,
     template: Option<Arc<PayloadTemplate>>,
     rps: Option<u32>,
+    ramp_up_duration: Option<Duration>,
     target: Arc<Target>,
     shared_metrics: Arc<SharedMetrics>,
     csv_tx: Option<mpsc::Sender<CsvRecord>>,
@@ -130,6 +131,47 @@ fn record_result(
     }
 }
 
+fn ramp_up_schedule_seconds(
+    request_number: u32,
+    target_rps: u32,
+    ramp_up_duration: Duration,
+) -> f64 {
+    let request_number = request_number as f64;
+    let target_rps = target_rps as f64;
+    let ramp_seconds = ramp_up_duration.as_secs_f64();
+
+    let requests_during_ramp = 0.5 * target_rps * ramp_seconds;
+
+    if request_number <= requests_during_ramp {
+        ((2.0 * request_number * ramp_seconds) / target_rps).sqrt()
+    } else {
+        ramp_seconds + (request_number - requests_during_ramp) / target_rps
+    }
+}
+
+async fn send_ramp_up_jobs(
+    job_tx: &async_channel::Sender<Job>,
+    job: Job,
+    count: u32,
+    target_rps: u32,
+    ramp_up_duration: Duration,
+) {
+    let start = Instant::now();
+
+    for request_number in 1..=count {
+        let scheduled_seconds =
+            ramp_up_schedule_seconds(request_number, target_rps, ramp_up_duration);
+
+        let deadline = start + Duration::from_secs_f64(scheduled_seconds);
+
+        tokio::time::sleep_until(deadline.into()).await;
+
+        if job_tx.send(job).await.is_err() {
+            break;
+        }
+    }
+}
+
 async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> {
     let PhaseConfig {
         count,
@@ -137,6 +179,7 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
         workers,
         template,
         rps,
+        ramp_up_duration,
         target,
         shared_metrics,
         csv_tx,
@@ -216,7 +259,11 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
     match (count, duration) {
         // Measurement phase: send exactly `count` requests.
         (Some(count), None) => {
-            if let Some(rps) = rps {
+            if let Some(ramp_up_duration) = ramp_up_duration {
+                let rps = rps.expect("ramp-up requires rps");
+
+                send_ramp_up_jobs(&job_tx, job, count, rps, ramp_up_duration).await;
+            } else if let Some(rps) = rps {
                 let mut interval = tokio::time::interval(Duration::from_secs_f64(1.0 / rps as f64));
 
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Burst);
@@ -304,6 +351,7 @@ pub async fn run_workers(
     csv_tx: Option<mpsc::Sender<CsvRecord>>,
     start_time: Instant,
     warmup_duration: Duration,
+    ramp_up_duration: Option<Duration>,
 ) -> Result<(Vec<WorkerResult>, Duration), JoinError> {
     if warmup_duration > Duration::ZERO {
         run_phase(PhaseConfig {
@@ -312,6 +360,7 @@ pub async fn run_workers(
             workers,
             template: template.clone(),
             rps,
+            ramp_up_duration: None,
             target: target.clone(),
             shared_metrics: shared_metrics.clone(),
             csv_tx: csv_tx.clone(),
@@ -329,6 +378,7 @@ pub async fn run_workers(
         workers,
         template,
         rps,
+        ramp_up_duration,
         target,
         shared_metrics,
         csv_tx,
@@ -340,4 +390,83 @@ pub async fn run_workers(
     let measurement_duration = measurement_start.elapsed();
 
     Ok((results, measurement_duration))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ramp_up_starts_at_zero_and_increases_request_rate() {
+        let ramp = Duration::from_secs(10);
+
+        let first = ramp_up_schedule_seconds(1, 1000, ramp);
+        let second = ramp_up_schedule_seconds(2, 1000, ramp);
+        let third = ramp_up_schedule_seconds(3, 1000, ramp);
+
+        assert!(first > 0.0);
+        assert!(second > first);
+        assert!(third > second);
+    }
+
+    #[test]
+    fn ramp_up_reaches_target_rate_at_end_of_ramp() {
+        let ramp = Duration::from_secs(10);
+        let target_rps = 1000;
+
+        let requests_during_ramp = (0.5 * target_rps as f64 * 10.0) as u32;
+
+        let deadline = ramp_up_schedule_seconds(requests_during_ramp, target_rps, ramp);
+
+        assert!((deadline - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn ramp_up_continues_at_constant_rate_after_ramp() {
+        let ramp = Duration::from_secs(10);
+        let target_rps = 1000;
+
+        let requests_during_ramp = 5000;
+
+        let first_after_ramp = ramp_up_schedule_seconds(requests_during_ramp + 1, target_rps, ramp);
+
+        let second_after_ramp =
+            ramp_up_schedule_seconds(requests_during_ramp + 2, target_rps, ramp);
+
+        let interval = second_after_ramp - first_after_ramp;
+
+        assert!((interval - 0.001).abs() < 0.000001);
+    }
+
+    #[test]
+    fn ramp_up_request_count_matches_integrated_rate() {
+        let target_rps = 5000;
+        let ramp = Duration::from_secs(10);
+
+        let expected_requests = 0.5 * target_rps as f64 * ramp.as_secs_f64();
+
+        assert_eq!(expected_requests, 25000.0);
+
+        let request_number = expected_requests as u32;
+
+        let deadline = ramp_up_schedule_seconds(request_number, target_rps, ramp);
+
+        assert!((deadline - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn ramp_up_is_continuous_at_transition() {
+        let target_rps = 1000;
+        let ramp = Duration::from_secs(10);
+
+        let requests_during_ramp = 5000;
+
+        let last_ramp_request = ramp_up_schedule_seconds(requests_during_ramp, target_rps, ramp);
+
+        let first_constant_request =
+            ramp_up_schedule_seconds(requests_during_ramp + 1, target_rps, ramp);
+
+        assert!((last_ramp_request - 10.0).abs() < 0.001);
+        assert!((first_constant_request - 10.001).abs() < 0.001);
+    }
 }
