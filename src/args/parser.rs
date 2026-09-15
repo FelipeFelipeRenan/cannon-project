@@ -317,6 +317,10 @@ impl Args {
             return Err("tolerance must be greater than or equal to 0".to_string());
         }
 
+        if reqwest::Method::from_bytes(self.method.as_bytes()).is_err() {
+            return Err(format!("invalid HTTP method: '{}'", self.method));
+        }
+
         for percentile in self.percentiles.split(',') {
             let percentile = percentile
                 .trim()
@@ -530,5 +534,31 @@ mod tests {
             args.validate().unwrap_err(),
             "tolerance must be greater than or equal to 0"
         );
+    }
+
+    #[test]
+    fn test_validation_accepts_standard_http_method() {
+        let args =
+            Args::try_parse_from(["cannon", "-u", "http://localhost", "-X", "POST"]).unwrap();
+
+        assert!(args.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validation_accepts_custom_http_method() {
+        let args =
+            Args::try_parse_from(["cannon", "-u", "http://localhost", "-X", "PROPFIND"]).unwrap();
+
+        assert!(args.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validation_rejects_invalid_http_method() {
+        let args =
+            Args::try_parse_from(["cannon", "-u", "http://localhost", "-X", "BAD METHOD"]).unwrap();
+
+        let error = args.validate().unwrap_err();
+
+        assert!(error.contains("invalid HTTP method"));
     }
 }

@@ -1,5 +1,3 @@
-// src/main.rs
-
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -121,7 +119,8 @@ async fn run_app(
         let http_target = cannon::client::target::Target::new_http(
             http_client.clone(),
             url_str.clone(),
-            reqwest::Method::from_bytes(args.method.as_bytes()).unwrap_or(reqwest::Method::GET),
+            reqwest::Method::from_bytes(args.method.as_bytes())
+                .map_err(|error| format!("invalid HTTP method '{}': {error}", args.method))?,
             Arc::new(args.headers.clone()),
             expect_arc,
         );
