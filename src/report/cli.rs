@@ -171,7 +171,16 @@ pub fn render_ascii_histogram(hist: &hdrhistogram::Histogram<u64>) {
 /// to the specified path.
 pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()> {
     let template = include_str!("../../templates/dashboard.html");
-    let final_html = template.replace("/*JSON_PAYLOAD*/", report_json);
+
+    let safe_json = report_json
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029");
+
+    let final_html = template.replace("/*JSON_PAYLOAD*/", &safe_json);
+
     std::fs::write(path, final_html)?;
     Ok(())
 }
@@ -401,5 +410,22 @@ mod tests {
         assert_eq!(to_ms(500), 0.5);
         assert_eq!(to_ms(1_500_000), 1500.0);
         assert_eq!(to_ms(0), 0.0);
+    }
+
+    #[test]
+    fn html_report_escapes_script_terminators() {
+        let path =
+            std::env::temp_dir().join(format!("cannon-html-report-{}.html", std::process::id()));
+
+        let report_json = r#"{"target":"</script><script>alert(1)</script>"}"#;
+
+        generate_html_report(path.to_str().unwrap(), report_json).unwrap();
+
+        let html = std::fs::read_to_string(&path).unwrap();
+
+        assert!(!html.contains("</script><script>alert(1)</script>"));
+        assert!(html.contains("\\u003c/script\\u003e"));
+
+        std::fs::remove_file(path).unwrap();
     }
 }
