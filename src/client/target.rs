@@ -158,13 +158,20 @@ impl Target {
         })
     }
 
-    #[inline(always)]
-    fn trigger_reconnect(pool_tx: async_channel::Sender<TcpStream>, address: String) {
-        tokio::spawn(async move {
-            if let Ok(new_stream) = TcpStream::connect(&address).await {
-                let _ = pool_tx.send(new_stream).await;
-            }
-        });
+    async fn reconnect(
+        pool_tx: &async_channel::Sender<TcpStream>,
+        address: &str,
+    ) -> Result<(), String> {
+        let stream = TcpStream::connect(address)
+            .await
+            .map_err(|error| format!("Reconnect Error: {error}"))?;
+
+        pool_tx
+            .send(stream)
+            .await
+            .map_err(|error| format!("TCP Pool Error: {error}"))?;
+
+        Ok(())
     }
 
     /// Executes a single request against the target.
@@ -237,19 +244,31 @@ impl Target {
                 address,
             } => {
                 if let Ok(mut stream) = pool_rx.recv().await {
-                    if let Err(e) = stream.write_all(payload).await {
-                        Self::trigger_reconnect(pool_tx.clone(), address.clone());
-                        return TargetResult::fail(start.elapsed(), format!("Broken Pipe: {}", e));
+                    if let Err(error) = stream.write_all(payload).await {
+                        let reconnect_error = Self::reconnect(pool_tx, address).await.err();
+
+                        let message = match reconnect_error {
+                            Some(reconnect_error) => {
+                                format!("Broken Pipe: {error}; {reconnect_error}")
+                            }
+                            None => format!("Broken Pipe: {error}"),
+                        };
+
+                        return TargetResult::fail(start.elapsed(), message);
                     }
-                    let _ = stream.flush().await;
 
                     let mut buffer = [0; 1];
-                    if let Err(e) = stream.read_exact(&mut buffer).await {
-                        Self::trigger_reconnect(pool_tx.clone(), address.clone());
-                        return TargetResult::fail(
-                            start.elapsed(),
-                            format!("Connection Reset: {}", e),
-                        );
+                    if let Err(error) = stream.read_exact(&mut buffer).await {
+                        let reconnect_error = Self::reconnect(pool_tx, address).await.err();
+
+                        let message = match reconnect_error {
+                            Some(reconnect_error) => {
+                                format!("Connection Reset: {error}; {reconnect_error}")
+                            }
+                            None => format!("Connection Reset: {error}"),
+                        };
+
+                        return TargetResult::fail(start.elapsed(), message);
                     }
 
                     let _ = pool_tx.send(stream).await;
