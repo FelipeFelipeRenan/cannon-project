@@ -17,6 +17,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = command.get_matches();
     let args = Args::from_arg_matches(&matches)?;
 
+    if args.update {
+        update()?;
+        return Ok(());
+    }
+
     if args.pin_threads {
         let core_ids = core_affinity::get_core_ids().expect("❌ Error reading CPU topology");
         let core_count = core_ids.len();
@@ -49,10 +54,6 @@ async fn run_app(
     matches: clap::ArgMatches,
 ) -> Result<(), Box<dyn std::error::Error>> {
     cannon::args::config::merge_with_yaml(&mut args, &matches)?;
-    if args.update {
-        update()?;
-        return Ok(());
-    }
 
     args.validate()
         .map_err(|error| format!("invalid configuration: {error}"))?;
