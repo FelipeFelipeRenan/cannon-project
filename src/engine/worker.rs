@@ -469,4 +469,60 @@ mod tests {
         assert!((last_ramp_request - 10.0).abs() < 0.001);
         assert!((first_constant_request - 10.001).abs() < 0.001);
     }
+
+    #[tokio::test]
+    async fn run_workers_aggregates_requests_across_workers() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+
+        let address = listener.local_addr().unwrap().to_string();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+
+            let responses = [1u8; 10];
+
+            tokio::io::AsyncWriteExt::write_all(&mut stream, &responses)
+                .await
+                .unwrap();
+        });
+
+        let target = Arc::new(Target::new_tcp(&address, 1).await.unwrap());
+
+        let metrics = Arc::new(SharedMetrics::default());
+
+        let (results, duration) = tokio::time::timeout(
+            Duration::from_secs(5),
+            run_workers(
+                10,
+                2,
+                None,
+                None,
+                target,
+                metrics.clone(),
+                None,
+                Instant::now(),
+                Duration::ZERO,
+                None,
+            ),
+        )
+        .await
+        .expect("run_workers timed out")
+        .unwrap();
+
+        assert_eq!(metrics.measured_requests.load(Ordering::Relaxed), 10);
+        assert_eq!(metrics.successes.load(Ordering::Relaxed), 10);
+        assert_eq!(metrics.failures.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.bytes_sent.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.bytes_received.load(Ordering::Relaxed), 10);
+
+        assert_eq!(results.len(), 2);
+
+        let total_histogram_samples: u64 =
+            results.iter().map(|result| result.histogram.len()).sum();
+
+        assert_eq!(total_histogram_samples, 10);
+        assert!(duration > Duration::ZERO);
+
+        server.await.unwrap();
+    }
 }
