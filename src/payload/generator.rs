@@ -280,7 +280,6 @@ impl PayloadTemplate {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]
@@ -295,5 +294,225 @@ mod tests {
         let result = PayloadTemplate::parse(r#"{"id":"{{uuid}}"}"#);
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn preserves_unknown_template_tag() {
+        let template = PayloadTemplate::parse("before {{unknown}} after").unwrap();
+
+        let mut buffer = Vec::new();
+        template.render(&mut buffer);
+
+        assert_eq!(buffer, b"before {{unknown}} after");
+    }
+
+    #[test]
+    fn renders_static_text() {
+        let template = PayloadTemplate::parse("hello world").unwrap();
+
+        let mut buffer = Vec::new();
+        template.render(&mut buffer);
+
+        assert_eq!(buffer, b"hello world");
+    }
+
+    #[test]
+    fn renders_u8_fixed_value() {
+        let template = PayloadTemplate::parse("{{value:255:u8}}").unwrap();
+
+        let mut buffer = Vec::new();
+        template.render(&mut buffer);
+
+        assert_eq!(buffer, vec![255]);
+    }
+
+    #[test]
+    fn renders_u16_big_endian() {
+        let template = PayloadTemplate::parse("{{value:258:u16be}}").unwrap();
+
+        let mut buffer = Vec::new();
+        template.render(&mut buffer);
+
+        assert_eq!(buffer, vec![0x01, 0x02]);
+    }
+
+    #[test]
+    fn renders_u16_little_endian() {
+        let template = PayloadTemplate::parse("{{value:258:u16le}}").unwrap();
+
+        let mut buffer = Vec::new();
+        template.render(&mut buffer);
+
+        assert_eq!(buffer, vec![0x02, 0x01]);
+    }
+
+    #[test]
+    fn renders_u32_big_endian_decimal() {
+        let template = PayloadTemplate::parse("{{value:16909060:u32be}}").unwrap();
+
+        let mut buffer = Vec::new();
+        template.render(&mut buffer);
+
+        assert_eq!(buffer, vec![0x01, 0x02, 0x03, 0x04]);
+    }
+
+    #[test]
+    fn renders_u32_little_endian() {
+        let template = PayloadTemplate::parse("{{value:16909060:u32le}}").unwrap();
+
+        let mut buffer = Vec::new();
+        template.render(&mut buffer);
+
+        assert_eq!(buffer, vec![0x04, 0x03, 0x02, 0x01]);
+    }
+
+    #[test]
+    fn renders_u64_big_endian() {
+        let template = PayloadTemplate::parse("{{value:72623859790382856:u64be}}").unwrap();
+
+        let mut buffer = Vec::new();
+        template.render(&mut buffer);
+
+        assert_eq!(buffer, vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+    }
+
+    #[test]
+    fn renders_u64_little_endian() {
+        let template = PayloadTemplate::parse("{{value:72623859790382856:u64le}}").unwrap();
+
+        let mut buffer = Vec::new();
+        template.render(&mut buffer);
+
+        assert_eq!(buffer, vec![0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]);
+    }
+
+    #[test]
+    fn renders_binary_random_number_with_expected_size() {
+        let cases = [
+            ("{{number:u8}}", 1),
+            ("{{number:u16be}}", 2),
+            ("{{number:u16le}}", 2),
+            ("{{number:u32be}}", 4),
+            ("{{number:u32le}}", 4),
+            ("{{number:u64be}}", 8),
+            ("{{number:u64le}}", 8),
+        ];
+
+        for (template_text, expected_size) in cases {
+            let template = PayloadTemplate::parse(template_text).unwrap();
+
+            let mut buffer = Vec::new();
+            template.render(&mut buffer);
+
+            assert_eq!(
+                buffer.len(),
+                expected_size,
+                "unexpected size for {template_text}"
+            );
+        }
+    }
+
+    #[test]
+    fn renders_random_text_number() {
+        let template = PayloadTemplate::parse("{{number}}").unwrap();
+
+        let mut buffer = Vec::new();
+        template.render(&mut buffer);
+
+        let value = std::str::from_utf8(&buffer).unwrap();
+
+        assert!(!value.is_empty());
+        assert!(value.parse::<u32>().is_ok());
+    }
+
+    #[test]
+    fn renders_username() {
+        let template = PayloadTemplate::parse("{{username}}").unwrap();
+
+        let mut buffer = Vec::new();
+        template.render(&mut buffer);
+
+        let value = std::str::from_utf8(&buffer).unwrap();
+
+        assert!(value.starts_with("user_"));
+        assert!(value[5..].parse::<u32>().is_ok());
+    }
+
+    #[test]
+    fn renders_email() {
+        let template = PayloadTemplate::parse("{{email}}").unwrap();
+
+        let mut buffer = Vec::new();
+        template.render(&mut buffer);
+
+        let value = std::str::from_utf8(&buffer).unwrap();
+
+        assert!(value.starts_with("test_"));
+        assert!(value.ends_with("@loadtest.com"));
+
+        let number = &value[5..value.len() - "@loadtest.com".len()];
+        assert!(number.parse::<u32>().is_ok());
+    }
+
+    #[test]
+    fn renders_uuid_with_expected_shape() {
+        let template = PayloadTemplate::parse("{{uuid}}").unwrap();
+
+        let mut buffer = Vec::new();
+        template.render(&mut buffer);
+
+        let value = std::str::from_utf8(&buffer).unwrap();
+
+        assert_eq!(value.len(), 36);
+        assert_eq!(value.as_bytes()[8], b'-');
+        assert_eq!(value.as_bytes()[13], b'-');
+        assert_eq!(value.as_bytes()[18], b'-');
+        assert_eq!(value.as_bytes()[23], b'-');
+
+        assert_eq!(&value[14..15], "4");
+
+        let variant = value.as_bytes()[19];
+        assert!(matches!(variant, b'8' | b'9' | b'a' | b'b'));
+    }
+
+    #[test]
+    fn renders_timestamp_as_unix_milliseconds() {
+        let template = PayloadTemplate::parse("{{timestamp}}").unwrap();
+
+        let mut buffer = Vec::new();
+        template.render(&mut buffer);
+
+        let value = std::str::from_utf8(&buffer).unwrap();
+        let timestamp = value.parse::<u128>();
+
+        assert!(timestamp.is_ok());
+    }
+
+    #[test]
+    fn render_reuses_buffer_without_leaking_previous_contents() {
+        let template = PayloadTemplate::parse("hello").unwrap();
+
+        let mut buffer = b"old data".to_vec();
+        template.render(&mut buffer);
+
+        assert_eq!(buffer, b"hello");
+    }
+
+    #[test]
+    fn renders_multiple_dynamic_values() {
+        let template = PayloadTemplate::parse("{{username}}:{{email}}:{{timestamp}}").unwrap();
+
+        let mut buffer = Vec::new();
+        template.render(&mut buffer);
+
+        let value = std::str::from_utf8(&buffer).unwrap();
+
+        let parts: Vec<&str> = value.split(':').collect();
+
+        assert_eq!(parts.len(), 3);
+        assert!(parts[0].starts_with("user_"));
+        assert!(parts[1].starts_with("test_"));
+        assert!(parts[1].ends_with("@loadtest.com"));
+        assert!(parts[2].parse::<u128>().is_ok());
     }
 }
