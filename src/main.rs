@@ -397,7 +397,7 @@ fn update() -> Result<(), Box<dyn std::error::Error>> {
         .build()?
         .update()?;
 
-    if status.updated() {
+    if status.is_updated() {
         println!("✅ Successfully updated to version {}", status.version());
     } else {
         println!(
