@@ -281,3 +281,165 @@ impl Target {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::TcpListener;
+
+    async fn spawn_http_server(response: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+
+            let mut request = vec![0u8; 4096];
+            let _ = stream.read(&mut request).await;
+
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        format!("http://{address}")
+    }
+
+    fn http_client() -> reqwest::Client {
+        reqwest::Client::builder().build().unwrap()
+    }
+
+    #[tokio::test]
+    async fn http_target_succeeds_on_2xx_response() {
+        let url = spawn_http_server(
+            "HTTP/1.1 200 OK\r\n\
+             Content-Length: 5\r\n\
+             \r\n\
+             hello",
+        )
+        .await;
+
+        let target = Target::new_http(
+            http_client(),
+            url,
+            reqwest::Method::GET,
+            Arc::new(Vec::new()),
+            None,
+        );
+
+        let result = target.fire(b"").await;
+
+        assert!(result.success);
+        assert_eq!(result.status_code, Some(200));
+        assert!(result.assertion_success);
+        assert_eq!(result.bytes_sent, 0);
+        assert_eq!(result.bytes_received, 5);
+        assert!(result.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn http_target_rejects_non_2xx_response() {
+        let url = spawn_http_server(
+            "HTTP/1.1 500 Internal Server Error\r\n\
+             Content-Length: 5\r\n\
+             \r\n\
+             error",
+        )
+        .await;
+
+        let target = Target::new_http(
+            http_client(),
+            url,
+            reqwest::Method::GET,
+            Arc::new(Vec::new()),
+            None,
+        );
+
+        let result = target.fire(b"").await;
+
+        assert!(!result.success);
+        assert_eq!(result.status_code, Some(500));
+        assert!(result.assertion_success);
+        assert_eq!(result.bytes_received, 5);
+        assert!(result.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn http_target_accepts_matching_expected_body() {
+        let url = spawn_http_server(
+            "HTTP/1.1 200 OK\r\n\
+             Content-Length: 11\r\n\
+             \r\n\
+             hello world",
+        )
+        .await;
+
+        let target = Target::new_http(
+            http_client(),
+            url,
+            reqwest::Method::GET,
+            Arc::new(Vec::new()),
+            Some(Arc::new("world".to_string())),
+        );
+
+        let result = target.fire(b"").await;
+
+        assert!(result.success);
+        assert_eq!(result.status_code, Some(200));
+        assert!(result.assertion_success);
+        assert!(result.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn http_target_rejects_mismatching_expected_body() {
+        let url = spawn_http_server(
+            "HTTP/1.1 200 OK\r\n\
+             Content-Length: 5\r\n\
+             \r\n\
+             hello",
+        )
+        .await;
+
+        let target = Target::new_http(
+            http_client(),
+            url,
+            reqwest::Method::GET,
+            Arc::new(Vec::new()),
+            Some(Arc::new("world".to_string())),
+        );
+
+        let result = target.fire(b"").await;
+
+        assert!(!result.success);
+        assert_eq!(result.status_code, Some(200));
+        assert!(!result.assertion_success);
+        assert_eq!(result.error.as_deref(), Some("Mismatch: missing 'world'"));
+    }
+
+    #[tokio::test]
+    async fn http_target_reports_network_errors() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        drop(listener);
+
+        let target = Target::new_http(
+            http_client(),
+            format!("http://{address}"),
+            reqwest::Method::GET,
+            Arc::new(Vec::new()),
+            None,
+        );
+
+        let result = target.fire(b"").await;
+
+        assert!(!result.success);
+        assert!(result.status_code.is_none());
+        assert!(!result.assertion_success);
+        assert!(result.error.is_some());
+        assert!(result
+            .error
+            .as_deref()
+            .unwrap()
+            .starts_with("Network Error:"));
+    }
+}
