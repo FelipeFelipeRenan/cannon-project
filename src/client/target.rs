@@ -442,4 +442,93 @@ mod tests {
             .unwrap()
             .starts_with("Network Error:"));
     }
+
+    #[tokio::test]
+    async fn tcp_target_succeeds_when_server_responds() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+
+            let mut payload = [0u8; 4];
+            stream.read_exact(&mut payload).await.unwrap();
+
+            assert_eq!(&payload, b"ping");
+
+            stream.write_all(&[1]).await.unwrap();
+        });
+
+        let target = Target::new_tcp(&address, 1).await.unwrap();
+
+        let result = target.fire(b"ping").await;
+
+        assert!(result.success);
+        assert!(result.assertion_success);
+        assert_eq!(result.status_code, None);
+        assert_eq!(result.bytes_sent, 4);
+        assert_eq!(result.bytes_received, 1);
+        assert!(result.error.is_none());
+
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn tcp_target_rejects_initial_connection_failure() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+
+        drop(listener);
+
+        let result = Target::new_tcp(&address, 1).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn tcp_target_reconnects_after_read_failure() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+
+        let server = tokio::spawn(async move {
+            // First connection: receive the request and close the connection
+            // without sending a response.
+            let (mut first_stream, _) = listener.accept().await.unwrap();
+
+            let mut payload = [0u8; 4];
+            first_stream.read_exact(&mut payload).await.unwrap();
+
+            assert_eq!(&payload, b"ping");
+
+            drop(first_stream);
+
+            // Second connection: this should be created by reconnect().
+            let (mut second_stream, _) = listener.accept().await.unwrap();
+
+            let mut payload = [0u8; 4];
+            second_stream.read_exact(&mut payload).await.unwrap();
+
+            assert_eq!(&payload, b"ping");
+
+            second_stream.write_all(&[1]).await.unwrap();
+        });
+
+        let target = Target::new_tcp(&address, 1).await.unwrap();
+
+        let first_result = target.fire(b"ping").await;
+
+        assert!(!first_result.success);
+        assert!(!first_result.assertion_success);
+        assert!(first_result.error.is_some());
+
+        let second_result = target.fire(b"ping").await;
+
+        assert!(second_result.success);
+        assert!(second_result.assertion_success);
+        assert_eq!(second_result.bytes_sent, 4);
+        assert_eq!(second_result.bytes_received, 1);
+        assert!(second_result.error.is_none());
+
+        server.await.unwrap();
+    }
 }
