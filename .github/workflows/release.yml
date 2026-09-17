@@ -7,7 +7,7 @@ on:
       - "*.*.*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -35,7 +35,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build release
-        run: cargo build --release
+        run: cargo build --locked --release
 
       - name: Prepare Binary (Unix)
         if: matrix.os != 'windows-latest'
@@ -77,6 +77,9 @@ jobs:
     name: Publish release
     runs-on: ubuntu-latest
     needs: build
+
+    permissions:
+      contents: write
 
     steps:
       - name: Download release artifacts
