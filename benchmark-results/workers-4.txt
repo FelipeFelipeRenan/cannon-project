@@ -1,0 +1,70 @@
+    Finished `release` profile [optimized] target(s) in 0.12s
+     Running `target/release/cannon --mode tcp -u '127.0.0.1:3001' -c 100000 -w 4 --body '{{value:1:u8}}'`
+
+      _____          _   _ _   _  ____  _   _ 
+     / ____|   /\   | \ | | \ | |/ __ \| \ | |
+    | |       /  \  |  \| |  \| | |  | |  \| |
+    | |      / /\ \ | . ` | . ` | |  | | . ` |
+    | |____ / ____ \| |\  | |\  | |__| | |\  |
+     \_____/_/    \_\_| \_|_| \_|\____/|_| \_|
+    
+--- The High-Velocity Load Tester ---
+
+🎯 Target: 127.0.0.1:3001
+🚀 Preparing the Cannon for 100000 shots with 4 workers...
+⏱️ Timeout: 30000ms
+🔌 Establishing a pool of 4 TCP connections...
+Press Ctrl+C to interrupt and view partial report
+
+--- 🏁 RELATÓRIO DO CANNON ---
+Successes:     100000
+Failures:       0
+
+📊 LATENCY DISTRIBUTION
+    0.03ms [████████                      ]  13759 (13.8%)
+    0.07ms [██████████████████████████████]  46072 (46.1%)
+    0.10ms [███████████████████████       ]  35630 (35.6%)
+    0.14ms [██                            ]   4316 (4.3%)
+    0.17ms [                              ]     84 (0.1%)
+    0.21ms [                              ]     78 (0.1%)
+    0.24ms [                              ]     38 (0.0%)
+    0.28ms [                              ]     15 (0.0%)
+    0.31ms [                              ]      7 (0.0%)
+    0.35ms [                              ]      0 (0.0%)
+    0.38ms [                              ]      1 (0.0%)
+
+-------------------------
+┌──────────────┬────────┐
+│ metric       │ value  │
+├──────────────┼────────┤
+│ Min          │ 0.01ms │
+├──────────────┼────────┤
+│ Mean         │ 0.06ms │
+├──────────────┼────────┤
+│ p50 (Median) │ 0.06ms │
+├──────────────┼────────┤
+│ p95          │ 0.10ms │
+├──────────────┼────────┤
+│ p99          │ 0.12ms │
+├──────────────┼────────┤
+│ Max          │ 0.36ms │
+└──────────────┴────────┘
+✅ Successes: 100000 | ❌ Failures: 0 | ⏱️ Total Time: 2.0044486s
+
+-------------------------
+
+📊 STATUS CODES DISTRIBUTION
+
+-------------------------
+
+📈 EFFICIENCY AND NETWORK
+📤 Transfered:   0.10 MB totais (0.05 MB/s)
+📥 Received:     0.10 MB totais (0.05 MB/s)
+
+-------------------------
+
+📈 CANNON EFFICIENCY
+Mean RPS:     64400.93 req/s
+
+-------------------------
+Test finished in 2s

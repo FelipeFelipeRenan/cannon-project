@@ -1,0 +1,20 @@
+{
+  "target": "127.0.0.1:3001",
+  "total_requests": 100000,
+  "concurrency": 64,
+  "successes": 100000,
+  "failures": 0,
+  "min_ms": 0.014,
+  "avg_ms": 0.146,
+  "p50_ms": 0.139,
+  "p95_ms": 0.247,
+  "p99_ms": 0.305,
+  "max_ms": 3.151,
+  "actual_rps": 427168.9772870282,
+  "bytes_sent": 100000,
+  "bytes_received": 100000,
+  "status_codes": {},
+  "errors": {},
+  "duration_secs": 0.234099397,
+  "apdex_score": 1.0
+}

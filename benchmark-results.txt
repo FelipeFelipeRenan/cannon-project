@@ -1,0 +1,13 @@
+Workers    Time(s)      p50(ms)      p95(ms)      p99(ms)     
+1          6.514119355  │          0.07         0.09        
+2          2.004328033  │          0.10         0.12        
+4          2.004305446  │          0.10         0.12        
+8          1.003250297  │          0.10         0.12        
+16         ✅ Successes: 100000 | ❌ Failures: 0 | ⏱️ Total Time: 502.822575ms │          0.11         0.13        
+32         ✅ Successes: 100000 | ❌ Failures: 0 | ⏱️ Total Time: 504.148842ms │          0.15         0.19        
+50         ✅ Successes: 100000 | ❌ Failures: 0 | ⏱️ Total Time: 504.820002ms │          0.20         0.25        
+64         ✅ Successes: 100000 | ❌ Failures: 0 | ⏱️ Total Time: 529.9451ms │          0.25         0.31        
+100        ✅ Successes: 100000 | ❌ Failures: 0 | ⏱️ Total Time: 524.982507ms │          0.37         0.46        
+128        ✅ Successes: 100000 | ❌ Failures: 0 | ⏱️ Total Time: 579.015452ms │          0.46         0.56        
+192        ✅ Successes: 100000 | ❌ Failures: 0 | ⏱️ Total Time: 582.11912ms │          0.68         0.83        
+250        ✅ Successes: 100000 | ❌ Failures: 0 | ⏱️ Total Time: 607.239925ms │          0.79         0.95        

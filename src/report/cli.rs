@@ -232,7 +232,7 @@ pub fn print_summary(
     bytes_recv: u64,
     percentiles: &[f64],
 ) {
-    println!("\n{}", "--- 🏁 RELATÓRIO DO CANNON ---".bold().underline());
+    println!("\n{}", "--- 🏁 CANNON'S REPORT ---".bold().underline());
     println!("Successes:     {}", successes);
     println!("Failures:       {}", failures);
 
