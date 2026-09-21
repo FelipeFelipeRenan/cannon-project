@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-COUNT=100000
+COUNT=1000000
 URL=127.0.0.1:3001
-RUNS=5
+RUNS=3
 
-RESULTS_DIR="benchmark-results/tcp-scaling"
+RESULTS_DIR="benchmark-results/tcp-long"
 
 mkdir -p "$RESULTS_DIR"
 rm -f "$RESULTS_DIR"/workers-*-run-*.json
 rm -f "$RESULTS_DIR"/combined.json
 rm -f "$RESULTS_DIR"/summary.tsv
 
-for WORKERS in 8 16 32 64 128 250; do
+for WORKERS in 32 64 128 250; do
     for RUN in $(seq 1 "$RUNS"); do
         OUTPUT="$RESULTS_DIR/workers-${WORKERS}-run-${RUN}.json"
 
@@ -20,6 +20,7 @@ for WORKERS in 8 16 32 64 128 250; do
         echo "========================================"
         echo "Workers: $WORKERS"
         echo "Run:     $RUN/$RUNS"
+        echo "Requests: $COUNT"
         echo "========================================"
 
         cargo run --release -- \
@@ -53,12 +54,10 @@ jq -s 'sort_by(.concurrency)' \
         {
             workers: .[0].concurrency,
             runs: length,
-
             avg_rps: (map(.actual_rps) | avg),
             rps_stddev: (map(.actual_rps) | stdev),
             min_rps: (map(.actual_rps) | min),
             max_rps: (map(.actual_rps) | max),
-
             avg_p50: (map(.p50_ms) | avg),
             avg_p95: (map(.p95_ms) | avg),
             avg_p99: (map(.p99_ms) | avg)
@@ -86,8 +85,3 @@ echo "Benchmark summary"
 echo "========================================"
 
 column -t -s $'\t' "$RESULTS_DIR/summary.tsv"
-
-echo
-echo "Raw results:     $RESULTS_DIR/combined.json"
-echo "Summary:         $RESULTS_DIR/summary.tsv"
-
