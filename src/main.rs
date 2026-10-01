@@ -137,16 +137,10 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             .unwrap()
             .progress_chars("━╾─"),
     );
-    println!(
-        "{}",
-        "Press Ctrl+C to interrupt and view partial report".bright_black()
-    );
 
-    // Instancia os Atomics
     use std::sync::atomic::Ordering;
     let shared_metrics = Arc::new(cannon::engine::worker::SharedMetrics::default());
 
-    // Configuração do CSV Assíncrono
     let mut csv_tx = None;
     let mut csv_handle = None;
 
@@ -220,7 +214,6 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Merging local reports (The final merge)
     let mut hist = Histogram::<u64>::new_with_bounds(1, 86_400_000_000, 3)?;
     let mut status_counts = std::collections::HashMap::new();
     let mut error_counts = std::collections::HashMap::new();
@@ -335,6 +328,11 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let errors_for_report = error_counts.clone();
 
     if args.output.is_some() || args.html.is_some() {
+        let percentiles_report = parsed_percentiles
+            .iter()
+            .map(|&p| (format!("p{}", p * 100.0), to_ms(hist.value_at_quantile(p))))
+            .collect();
+
         let report = FinalReport {
             target: url_str.clone(),
             total_requests: args.count,
@@ -354,6 +352,7 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             errors: errors_for_report,
             duration_secs: total_secs,
             apdex_score: apdex,
+            percentiles: percentiles_report,
         };
 
         let json_data = serde_json::to_string_pretty(&report)?;
@@ -417,15 +416,12 @@ mod tests {
 
     #[test]
     fn test_histogram_percentile_math() {
-        // Initialize the histogram exactly as we do in the engine
         let mut hist = Histogram::<u64>::new(3).expect("Failed to create histogram");
 
-        // Simulate 100 requests with latencies from 1ms to 100ms
         for i in 1..=100 {
             hist.record(i).unwrap();
         }
 
-        // Validate if the percentile math (that Cannon exports) is accurate
         assert_eq!(
             hist.value_at_quantile(0.50),
             50,
@@ -441,10 +437,6 @@ mod tests {
     fn test_apdex_calculation_logic() {
         let mut hist = Histogram::<u64>::new(3).unwrap();
 
-        // Simulate requests:
-        // 60 satisfied requests (<= 50ms)
-        // 30 tolerating requests (<= 200ms)
-        // 10 frustrated requests (> 200ms)
         for _ in 0..60 {
             hist.record(40).unwrap();
         }
@@ -459,7 +451,6 @@ mod tests {
         let satisfied = hist.count_between(0, apdex_t);
         let tolerating = hist.count_between(apdex_t + 1, apdex_t * 4);
 
-        // Apdex Formula: (Satisfied + (Tolerating / 2)) / Total
         let apdex_score = (satisfied as f64 + (tolerating as f64 / 2.0)) / 100.0;
 
         assert_eq!(satisfied, 60);
