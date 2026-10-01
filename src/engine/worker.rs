@@ -112,7 +112,6 @@ fn record_result(
         .fetch_add(res.bytes_received, Ordering::Relaxed);
 
     let latency_us = res.duration.as_micros() as u64;
-    let latency_us = latency_us.min(60_000_000);
 
     histogram
         .record(latency_us)
@@ -201,7 +200,7 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
         let handle = tokio::spawn(async move {
             let mut payload_buffer = Vec::with_capacity(1024);
 
-            let mut local_hist = Histogram::<u64>::new_with_bounds(1, 60_000_000, 3).unwrap();
+            let mut local_hist = Histogram::<u64>::new_with_bounds(1, 86_400_000_000, 3).unwrap();
 
             let mut local_status = HashMap::new();
             let mut local_errors = HashMap::new();
