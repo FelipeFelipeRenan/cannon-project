@@ -78,6 +78,7 @@ pub struct FinalReport {
     pub apdex_score: f64,
 
     /// Configured latency percentiles and their measured values in milliseconds.
+    #[tabled(skip)]
     pub percentiles: HashMap<String, f64>,
 }
 
