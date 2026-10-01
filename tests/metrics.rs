@@ -124,9 +124,7 @@ async fn warmup_requests_are_excluded_from_metrics() {
         None,
     )
     .await
-    else {
-        return;
-    };
+    .expect("run_workers failed");
 
     server.abort();
 
@@ -212,9 +210,7 @@ async fn measured_requests_are_recorded() {
         None,
     )
     .await
-    else {
-        return;
-    };
+    .expect("run_workers failed");
 
     server.abort();
 
