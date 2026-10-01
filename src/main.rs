@@ -15,12 +15,16 @@ use tokio::sync::mpsc;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let command = Args::command();
     let matches = command.get_matches();
-    let args = Args::from_arg_matches(&matches)?;
+    let mut args = Args::from_arg_matches(&matches)?;
 
     if args.update {
         update()?;
         return Ok(());
     }
+
+    cannon::args::config::merge_with_yaml(&mut args, &matches)?;
+    args.validate()
+        .map_err(|error| format!("invalid configuration: {error}"))?;
 
     if args.pin_threads {
         let core_ids = core_affinity::get_core_ids().expect("❌ Error reading CPU topology");
@@ -42,21 +46,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
             .build()?;
 
-        rt.block_on(async { run_app(args, matches).await })
+        rt.block_on(async { run_app(args).await })
     } else {
         let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(async { run_app(args, matches).await })
+        rt.block_on(async { run_app(args).await })
     }
 }
 
 async fn run_app(
-    mut args: Args,
-    matches: clap::ArgMatches,
+    args: Args,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    cannon::args::config::merge_with_yaml(&mut args, &matches)?;
-
-    args.validate()
-        .map_err(|error| format!("invalid configuration: {error}"))?;
 
     let url_str = if args.mode.to_lowercase() == "tcp" {
         args.url
@@ -225,7 +224,7 @@ async fn run_app(
     }
 
     // Merging local reports (The final merge)
-    let mut hist = Histogram::<u64>::new_with_bounds(1, 60_000_000, 3)?;
+    let mut hist = Histogram::<u64>::new_with_bounds(1, 86_400_000_000, 3)?;
     let mut status_counts = std::collections::HashMap::new();
     let mut error_counts = std::collections::HashMap::new();
     let mut assertion_failures = 0;
@@ -266,7 +265,7 @@ async fn run_app(
         success_count,
         failure_count,
         &hist,
-        start_test.elapsed(),
+        measurement_duration,
         args.rps,
         actual_rps,
         status_counts.clone(),
@@ -319,6 +318,10 @@ async fn run_app(
                     "❌ Regression detected: degradation exceeds tolerance of {:.2}%",
                     args.tolerance
                 );
+                return Err(format!(
+                    "performance regression exceeded tolerance: {:.2}% > {:.2}%",
+                    degradation, args.tolerance
+                ).into());
             }
         } else {
             let improvement = ((base_p99 - current_p99_ms) / base_p99) * 100.0;
