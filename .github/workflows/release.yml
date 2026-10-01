@@ -24,7 +24,7 @@ jobs:
           - os: windows-latest
             asset_name: cannon-windows-x64.exe
 
-          - os: macos-latest
+          - os: macos-13
             asset_name: cannon-macos-x64
 
     steps:
