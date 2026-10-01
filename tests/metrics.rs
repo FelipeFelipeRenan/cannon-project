@@ -60,7 +60,7 @@ async fn status_code_is_counted_once() {
     let shared_metrics = Arc::new(SharedMetrics::default());
     let start_time = Instant::now();
 
-    let Ok((results, _)) = run_workers(
+    let (results, _) = run_workers(
         1,
         1,
         None,
@@ -73,9 +73,7 @@ async fn status_code_is_counted_once() {
         None,
     )
     .await
-    else {
-        return;
-    };
+    .expect("run_workers failed");
 
     server.abort();
 
@@ -113,7 +111,7 @@ async fn warmup_requests_are_excluded_from_metrics() {
     let shared_metrics = Arc::new(SharedMetrics::default());
     let start_time = Instant::now();
 
-    let Ok((results, measurement_duration)) = run_workers(
+    let (results, measurement_duration) = run_workers(
         2,
         2,
         None,
