@@ -197,7 +197,7 @@ async fn measured_requests_are_recorded() {
     let shared_metrics = Arc::new(SharedMetrics::default());
     let start_time = Instant::now();
 
-    let Ok((results, measurement_duration)) = run_workers(
+    let (results, measurement_duration) = run_workers(
         1,
         1,
         None,

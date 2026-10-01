@@ -53,10 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-async fn run_app(
-    args: Args,
-) -> Result<(), Box<dyn std::error::Error>> {
-
+async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let url_str = if args.mode.to_lowercase() == "tcp" {
         args.url
             .clone()
@@ -321,7 +318,8 @@ async fn run_app(
                 return Err(format!(
                     "performance regression exceeded tolerance: {:.2}% > {:.2}%",
                     degradation, args.tolerance
-                ).into());
+                )
+                .into());
             }
         } else {
             let improvement = ((base_p99 - current_p99_ms) / base_p99) * 100.0;
