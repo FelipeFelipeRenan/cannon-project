@@ -134,12 +134,44 @@ pub fn merge_with_yaml(
         }
 
         if let Some(yaml_headers) = conf.headers {
-            if !was_provided_by_cli(matches, "header") {
+            // The clap id is the field name (`headers`); `header` is only the
+            // long flag. Using the flag name here used to panic.
+            if !was_provided_by_cli(matches, "headers") {
                 args.headers = yaml_headers;
             } else {
                 let mut merged = yaml_headers;
                 merged.extend(args.headers.iter().cloned());
                 args.headers = merged;
+            }
+        }
+
+        if let Some(ramp_up) = conf.ramp_up {
+            if !was_provided_by_cli(matches, "ramp_up") {
+                args.ramp_up = Some(ramp_up);
+            }
+        }
+
+        if let Some(user_agent) = conf.user_agent {
+            if !was_provided_by_cli(matches, "user_agent") {
+                args.user_agent = user_agent;
+            }
+        }
+
+        if let Some(output) = conf.output {
+            if !was_provided_by_cli(matches, "output") {
+                args.output = Some(output);
+            }
+        }
+
+        if let Some(html) = conf.html {
+            if !was_provided_by_cli(matches, "html") {
+                args.html = Some(html);
+            }
+        }
+
+        if let Some(percentiles) = conf.percentiles {
+            if !was_provided_by_cli(matches, "percentiles") {
+                args.percentiles = percentiles;
             }
         }
     }
@@ -213,6 +245,129 @@ mod tests {
         merge_with_yaml(&mut args, &matches).unwrap();
 
         assert_eq!(args.workers, 100);
+    }
+
+    #[test]
+    fn ramp_up_is_a_named_flag() {
+        let (args, _) = parse_args(&["--rps", "100", "--ramp-up", "5s"]);
+
+        assert_eq!(args.ramp_up.as_deref(), Some("5s"));
+    }
+
+    #[test]
+    fn ramp_up_can_come_from_yaml() {
+        let config_path = write_temp_config("rps: 100\nramp_up: 10s\n");
+
+        let (mut args, matches) = parse_args(&["--config", &config_path]);
+
+        merge_with_yaml(&mut args, &matches).unwrap();
+
+        assert_eq!(args.ramp_up.as_deref(), Some("10s"));
+        assert!(args.validate().is_ok());
+
+        fs::remove_file(config_path).unwrap();
+    }
+
+    #[test]
+    fn cli_ramp_up_overrides_yaml() {
+        let config_path = write_temp_config("rps: 100\nramp_up: 10s\n");
+
+        let (mut args, matches) = parse_args(&["--config", &config_path, "--ramp-up", "2s"]);
+
+        merge_with_yaml(&mut args, &matches).unwrap();
+
+        assert_eq!(args.ramp_up.as_deref(), Some("2s"));
+
+        fs::remove_file(config_path).unwrap();
+    }
+
+    #[test]
+    fn report_options_can_come_from_yaml() {
+        let config_path = write_temp_config(
+            "output: out.json\nhtml: out.html\npercentiles: \"50,99.9\"\nuser_agent: test/1\n",
+        );
+
+        let (mut args, matches) = parse_args(&["--config", &config_path]);
+
+        merge_with_yaml(&mut args, &matches).unwrap();
+
+        assert_eq!(args.output.as_deref(), Some("out.json"));
+        assert_eq!(args.html.as_deref(), Some("out.html"));
+        assert_eq!(args.percentiles, "50,99.9");
+        assert_eq!(args.user_agent, "test/1");
+
+        fs::remove_file(config_path).unwrap();
+    }
+
+    #[test]
+    fn yaml_headers_do_not_panic_and_are_applied() {
+        let config_path =
+            write_temp_config("headers:\n  - \"Authorization: Bearer x\"\n  - \"Accept: */*\"\n");
+
+        let (mut args, matches) = parse_args(&["--config", &config_path]);
+
+        merge_with_yaml(&mut args, &matches).unwrap();
+
+        assert_eq!(args.headers, ["Authorization: Bearer x", "Accept: */*"]);
+
+        fs::remove_file(config_path).unwrap();
+    }
+
+    #[test]
+    fn yaml_and_cli_headers_are_combined() {
+        let config_path = write_temp_config("headers:\n  - \"A: 1\"\n");
+
+        let (mut args, matches) = parse_args(&["--config", &config_path, "-H", "B: 2"]);
+
+        merge_with_yaml(&mut args, &matches).unwrap();
+
+        assert_eq!(args.headers, ["A: 1", "B: 2"]);
+
+        fs::remove_file(config_path).unwrap();
+    }
+
+    #[test]
+    fn every_supported_yaml_key_merges_without_panicking() {
+        let config_path = write_temp_config(
+            r#"
+url: "http://localhost:8080"
+mode: http
+method: POST
+headers: ["A: 1"]
+body: "{}"
+expect: ok
+workers: 3
+count: 7
+rps: 10
+ramp_up: 1s
+warmup: 1
+timeout: 1000
+connect_timeout: 500
+user_agent: ua
+insecure: true
+http2: true
+percentiles: "50,99"
+apdex_t: 100
+output: o.json
+html: o.html
+csv: o.csv
+save_baseline: b.json
+compare_baseline: c.json
+tolerance: 7.5
+pin_threads: true
+"#,
+        );
+
+        let (mut args, matches) = parse_args(&["--config", &config_path]);
+
+        merge_with_yaml(&mut args, &matches).unwrap();
+
+        assert_eq!(args.workers, 3);
+        assert_eq!(args.count, 7);
+        assert_eq!(args.tolerance, 7.5);
+        assert!(args.pin_threads && args.http2 && args.insecure);
+
+        fs::remove_file(config_path).unwrap();
     }
 
     #[test]

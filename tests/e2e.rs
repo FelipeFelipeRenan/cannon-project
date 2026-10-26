@@ -632,3 +632,37 @@ fn ctrl_c_stops_the_run_and_still_prints_a_partial_report() {
 
     let _ = std::fs::remove_file(report);
 }
+
+#[test]
+fn shipped_example_scenario_runs_with_headers() {
+    // Regression test: YAML files with `headers:` used to panic.
+    let server = HttpServer::start("ok");
+    let scenario = format!("{}/examples/scenario.yml", env!("CARGO_MANIFEST_DIR"));
+
+    let output = run_cannon(&["-f", &scenario, "-u", &server.url(), "-c", "20", "-w", "4"]);
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stdout(&output).contains("Failures: 0"));
+    assert_eq!(server.requests(), 20);
+}
+
+#[test]
+fn network_errors_are_not_reported_as_assertion_failures() {
+    // Bind then drop to get a port nothing listens on.
+    let port = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let url = format!("http://127.0.0.1:{port}/");
+
+    let output = run_cannon(&["-u", &url, "-c", "5", "-w", "1", "-t", "500"]);
+    let text = stdout(&output);
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(text.contains("Failures: 5"));
+    assert!(
+        !text.contains("Assertion Failures"),
+        "no --expect was configured, so nothing can be an assertion failure:\n{text}"
+    );
+}

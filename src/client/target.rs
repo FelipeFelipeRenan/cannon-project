@@ -57,7 +57,8 @@ impl TargetResult {
     /// Creates a failed request result.
     ///
     /// The supplied error message is stored in the result and all byte
-    /// counters are initialized to zero.
+    /// counters are initialized to zero. `assertion_success` stays `true`
+    /// because no response was available to evaluate an assertion against.
     pub fn fail(duration: Duration, error: String) -> Self {
         Self {
             success: false,
@@ -66,7 +67,9 @@ impl TargetResult {
             error: Some(error),
             bytes_sent: 0,
             bytes_received: 0,
-            assertion_success: false,
+            // A transport failure says nothing about the response assertion,
+            // so it must not be counted as an assertion failure.
+            assertion_success: true,
         }
     }
 }
@@ -255,16 +258,20 @@ impl Target {
                                 let mut err = None;
                                 let mut ok = true;
                                 if let Some(expected) = expected_body {
-                                    if let Ok(text) = std::str::from_utf8(&bytes) {
-                                        if !text.contains(expected.as_ref().as_str()) {
-                                            err = Some(format!("Mismatch: missing '{}'", expected));
-                                            ok = false;
-                                        }
+                                    let text = String::from_utf8_lossy(&bytes);
+
+                                    if !text.contains(expected.as_ref().as_str()) {
+                                        err = Some(format!("Mismatch: missing '{}'", expected));
+                                        ok = false;
                                     }
                                 }
                                 (err, bytes.len() as u64, ok)
                             }
-                            Err(e) => (Some(format!("Read Error: {}", e)), 0, false),
+                            Err(e) => (
+                                Some(format!("Read Error: {}", e)),
+                                0,
+                                expected_body.is_none(),
+                            ),
                         };
                         TargetResult {
                             duration: start.elapsed(),
@@ -491,7 +498,10 @@ mod tests {
 
         assert!(!result.success);
         assert!(result.status_code.is_none());
-        assert!(!result.assertion_success);
+        assert!(
+            result.assertion_success,
+            "a network error is not an assertion failure"
+        );
         assert!(result.error.is_some());
         assert!(result
             .error
@@ -575,7 +585,7 @@ mod tests {
         let first_result = target.fire(b"ping").await;
 
         assert!(!first_result.success);
-        assert!(!first_result.assertion_success);
+        assert!(first_result.assertion_success);
         assert!(first_result.error.is_some());
 
         let second_result = target.fire(b"ping").await;

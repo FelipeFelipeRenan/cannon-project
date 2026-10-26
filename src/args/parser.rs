@@ -379,6 +379,9 @@ pub struct FileConfig {
     /// Target request rate in requests per second.
     pub rps: Option<u32>,
 
+    /// Duration of the ramp-up phase.
+    pub ramp_up: Option<String>,
+
     /// Request timeout in milliseconds.
     pub timeout: Option<u64>,
 
@@ -409,11 +412,23 @@ pub struct FileConfig {
     /// TCP connection establishment timeout in milliseconds.
     pub connect_timeout: Option<u64>,
 
+    /// HTTP User-Agent header.
+    pub user_agent: Option<String>,
+
     /// Protocol used by the target.
     pub mode: Option<String>,
 
     /// Duration of the warm-up phase in seconds.
     pub warmup: Option<u64>,
+
+    /// JSON output file.
+    pub output: Option<String>,
+
+    /// HTML report output file.
+    pub html: Option<String>,
+
+    /// Latency percentiles as a comma-separated string.
+    pub percentiles: Option<String>,
 
     /// File used to save the performance baseline.
     pub save_baseline: Option<String>,
