@@ -109,7 +109,8 @@ pub struct Args {
     pub warmup: u64,
 
     /// Gradually increase the request rate from zero to the configured RPS
-    /// over the specified duration.    #[arg(long, value_name = "DURATION", help_heading = "Load")]
+    /// over the specified duration.
+    #[arg(long, value_name = "DURATION", help_heading = "Load")]
     pub ramp_up: Option<String>,
 
     // ─────────────────────────────────────────────────────────────────────
@@ -470,6 +471,23 @@ pub fn parse_ramp_up_duration(value: &str) -> Result<Duration, String> {
 mod tests {
     use super::*;
     use clap::Parser;
+
+    #[test]
+    fn test_ramp_up_argument_is_parsed() {
+        let args = Args::try_parse_from([
+            "cannon",
+            "-u",
+            "http://localhost",
+            "--rps",
+            "100",
+            "--ramp-up",
+            "5s",
+        ])
+        .unwrap();
+
+        assert_eq!(args.ramp_up.as_deref(), Some("5s"));
+        assert!(args.validate().is_ok());
+    }
 
     #[test]
     fn test_valid_basic_arguments() {
