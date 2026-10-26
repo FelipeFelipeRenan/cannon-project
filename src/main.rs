@@ -27,7 +27,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|error| format!("invalid configuration: {error}"))?;
 
     if args.pin_threads {
-        let core_ids = core_affinity::get_core_ids().expect("❌ Error reading CPU topology");
+        let core_ids = core_affinity::get_core_ids()
+            .filter(|ids| !ids.is_empty())
+            .ok_or("could not read the CPU topology required by --pin-threads")?;
         let core_count = core_ids.len();
         let core_idx = Arc::new(AtomicUsize::new(0));
 
@@ -55,9 +57,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let url_str = if args.mode.to_lowercase() == "tcp" {
-        args.url
-            .clone()
-            .expect("❌ Error: The address (IP:Port) from the target is required!")
+        args.url.clone().ok_or(
+            "the target address (IP:Port) is required: use -u/--url or set `url` in the config file",
+        )?
     } else {
         cannon::security::url_validator::validate_and_extract(&args.url)
             .map_err(|error| format!("invalid target URL: {error}"))?
@@ -197,7 +199,20 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             _ = tokio::signal::ctrl_c() => {
-                println!("\n\n{}", "⚠️ Interruption detected! Waiting workers...".yellow().bold());
+                shared_metrics.cancel();
+                pb.abandon();
+                println!(
+                    "\n\n{}",
+                    "⚠️ Interruption detected! Finishing in-flight requests (press Ctrl-C again to force quit)..."
+                        .yellow()
+                        .bold()
+                );
+
+                tokio::spawn(async {
+                    let _ = tokio::signal::ctrl_c().await;
+                    std::process::exit(130);
+                });
+
                 break;
             }
         }
