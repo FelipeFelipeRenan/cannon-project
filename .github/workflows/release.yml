@@ -10,8 +10,30 @@ permissions:
   contents: read
 
 jobs:
+  verify:
+    name: Verify tag matches Cargo.toml
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compare tag and crate version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          crate="$(grep -m1 '^version' Cargo.toml | cut -d '"' -f 2)"
+
+          echo "tag=$tag crate=$crate"
+
+          if [ "$tag" != "$crate" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $crate"
+            exit 1
+          fi
+
   build:
-    name: Build for ${{ matrix.os }}
+    name: Build ${{ matrix.asset_name }}
+    needs: verify
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -20,12 +42,23 @@ jobs:
         include:
           - os: ubuntu-latest
             asset_name: cannon-linux-x64
+            binary: cannon
+
+          - os: ubuntu-24.04-arm
+            asset_name: cannon-linux-arm64
+            binary: cannon
+
+          - os: macos-15-intel
+            asset_name: cannon-macos-x64
+            binary: cannon
+
+          - os: macos-latest
+            asset_name: cannon-macos-arm64
+            binary: cannon
 
           - os: windows-latest
             asset_name: cannon-windows-x64.exe
-
-          - os: macos-13
-            asset_name: cannon-macos-x64
+            binary: cannon.exe
 
     steps:
       - name: Checkout repository
@@ -34,44 +67,27 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Run tests
+        run: cargo test --locked --release
+
       - name: Build release
         run: cargo build --locked --release
 
-      - name: Prepare Binary (Unix)
-        if: matrix.os != 'windows-latest'
+      - name: Smoke test the binary
+        shell: bash
+        run: ./target/release/${{ matrix.binary }} --version
+
+      - name: Prepare binary
         shell: bash
         run: |
-          cd target/release
-
-          if [ -f "cannon" ]; then
-            mv "cannon" "${{ matrix.asset_name }}"
-          elif [ -f "cannon-project" ]; then
-            mv "cannon-project" "${{ matrix.asset_name }}"
-          else
-            echo "❌ Error: No binary found in target/release"
-            exit 1
-          fi
-
-      - name: Prepare Binary (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          cd target/release
-
-          if [ -f "cannon.exe" ]; then
-            mv "cannon.exe" "${{ matrix.asset_name }}"
-          elif [ -f "cannon-project.exe" ]; then
-            mv "cannon-project.exe" "${{ matrix.asset_name }}"
-          else
-            echo "❌ Error: No .exe found in target/release"
-            exit 1
-          fi
+          mv "target/release/${{ matrix.binary }}" "target/release/${{ matrix.asset_name }}"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
           path: target/release/${{ matrix.asset_name }}
+          if-no-files-found: error
 
   release:
     name: Publish release
@@ -91,10 +107,7 @@ jobs:
       - name: Generate SHA256 checksums
         working-directory: release-assets
         run: |
-          sha256sum cannon-linux-x64 \
-                    cannon-macos-x64 \
-                    cannon-windows-x64.exe \
-            > SHA256SUMS
+          sha256sum cannon-* > SHA256SUMS
 
           echo "Generated checksums:"
           cat SHA256SUMS
@@ -102,10 +115,9 @@ jobs:
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
+          generate_release_notes: true
           files: |
-            release-assets/cannon-linux-x64
-            release-assets/cannon-macos-x64
-            release-assets/cannon-windows-x64.exe
+            release-assets/cannon-*
             release-assets/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

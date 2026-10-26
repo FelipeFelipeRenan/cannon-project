@@ -2,6 +2,14 @@
 name = "cannon"
 version = "2.1.0"
 edition = "2021"
+description = "High-performance load testing for HTTP and raw TCP services"
+readme = "README.md"
+repository = "https://github.com/FelipeFelipeRenan/cannon-project"
+homepage = "https://github.com/FelipeFelipeRenan/cannon-project"
+keywords = ["load-testing", "benchmark", "http", "tcp", "performance"]
+categories = ["command-line-utilities", "development-tools::testing", "network-programming"]
+exclude = ["/.github", "/scripts", "/docs", "/scenario_test.yml", "/install.sh"]
+# license = "..."   # TODO: set once the project license is chosen (and add a LICENSE file)
 
 [profile.release]
 lto = true

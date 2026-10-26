@@ -397,14 +397,15 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn update() -> Result<(), Box<dyn std::error::Error>> {
-    let target = if cfg!(target_os = "linux") {
-        "linux-x64"
-    } else if cfg!(target_os = "windows") {
-        "windows-x64.exe"
-    } else if cfg!(target_os = "macos") {
-        "macos-x64"
-    } else {
-        ""
+    let target = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("linux", "x86_64") => "linux-x64",
+        ("linux", "aarch64") => "linux-arm64",
+        ("macos", "x86_64") => "macos-x64",
+        ("macos", "aarch64") => "macos-arm64",
+        ("windows", "x86_64") => "windows-x64.exe",
+        (os, arch) => {
+            return Err(format!("no pre-built Cannon release for {os}/{arch}").into());
+        }
     };
 
     let status = self_update::backends::github::Update::configure()
