@@ -312,6 +312,14 @@ impl Args {
             parse_ramp_up_duration(ramp_up)?;
         }
 
+        if self.mode.eq_ignore_ascii_case("tcp") && self.body.is_none() {
+            return Err(
+                "TCP mode requires a request payload (use --body, e.g. --body '{{value:1:u8}}'): \
+                 Cannon waits for a response after every write"
+                    .to_string(),
+            );
+        }
+
         if self.timeout == 0 {
             return Err("timeout must be greater than 0".to_string());
         }
@@ -497,6 +505,32 @@ mod tests {
         assert_eq!(args.count, 100);
         assert_eq!(args.workers, 10, "O default de workers deve ser 10");
         assert_eq!(args.method, "GET", "O default do método deve ser GET");
+    }
+
+    #[test]
+    fn tcp_mode_requires_a_body() {
+        let args =
+            Args::try_parse_from(["cannon", "--mode", "tcp", "-u", "127.0.0.1:9000"]).unwrap();
+
+        let error = args.validate().unwrap_err();
+
+        assert!(error.contains("TCP mode requires a request payload"));
+    }
+
+    #[test]
+    fn tcp_mode_with_body_is_valid() {
+        let args = Args::try_parse_from([
+            "cannon",
+            "--mode",
+            "tcp",
+            "-u",
+            "127.0.0.1:9000",
+            "--body",
+            "{{value:1:u8}}",
+        ])
+        .unwrap();
+
+        assert!(args.validate().is_ok());
     }
 
     #[test]

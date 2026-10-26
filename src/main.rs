@@ -119,7 +119,13 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     let target: Arc<cannon::client::target::Target> = if args.mode.to_lowercase() == "tcp" {
         let clean_addr = url_str.replace("http://", "").replace("https://", "");
-        let tcp_target = cannon::client::target::Target::new_tcp(&clean_addr, args.workers).await?;
+        let tcp_target = cannon::client::target::Target::new_tcp_with_timeouts(
+            &clean_addr,
+            args.workers,
+            std::time::Duration::from_millis(args.connect_timeout),
+            std::time::Duration::from_millis(args.timeout),
+        )
+        .await?;
 
         Arc::new(tcp_target)
     } else {
