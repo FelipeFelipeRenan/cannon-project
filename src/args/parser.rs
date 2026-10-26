@@ -170,7 +170,7 @@ pub struct Args {
         short = 'A',
         long,
         value_name = "AGENT",
-        default_value = "Cannon/1.0",
+        default_value = concat!("Cannon/", env!("CARGO_PKG_VERSION")),
         help_heading = "Request"
     )]
     pub user_agent: String,

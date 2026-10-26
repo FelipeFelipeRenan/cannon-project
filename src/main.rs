@@ -2,7 +2,9 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use cannon::args::parser::Args;
-use cannon::report::cli::{generate_html_report, print_banner, print_summary, to_ms, FinalReport};
+use cannon::report::cli::{
+    generate_html_report, percentile_label, print_banner, print_summary, to_ms, FinalReport,
+};
 use clap::{CommandFactory, FromArgMatches};
 use colored::Colorize;
 use hdrhistogram::Histogram;
@@ -279,6 +281,8 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         total_bytes_sent,
         total_bytes_received,
         &parsed_percentiles,
+        apdex,
+        args.apdex_t,
     );
 
     let current_p99_ms = hist.value_at_percentile(99.0) as f64 / 1000.0;
@@ -345,12 +349,12 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     if args.output.is_some() || args.html.is_some() {
         let percentiles_report = parsed_percentiles
             .iter()
-            .map(|&p| (format!("p{}", p * 100.0), to_ms(hist.value_at_quantile(p))))
+            .map(|&p| (percentile_label(p), to_ms(hist.value_at_quantile(p))))
             .collect();
 
         let report = FinalReport {
             target: url_str.clone(),
-            total_requests: args.count,
+            total_requests: u32::try_from(measured_requests).unwrap_or(u32::MAX),
             concurrency: args.workers,
             successes: success_count,
             failures: failure_count,
