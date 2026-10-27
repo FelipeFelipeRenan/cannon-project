@@ -2,7 +2,7 @@ use crate::client::target::{Target, TargetResult};
 use crate::payload::generator::PayloadTemplate;
 use hdrhistogram::Histogram;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -26,6 +26,21 @@ pub struct SharedMetrics {
     pub bytes_received: AtomicU64,
     /// Number of measured requests completed.
     pub measured_requests: AtomicU64,
+    /// Set to request a graceful stop: no new requests are scheduled and
+    /// in-flight requests are allowed to finish.
+    pub cancelled: AtomicBool,
+}
+
+impl SharedMetrics {
+    /// Returns `true` once a graceful stop has been requested.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Relaxed)
+    }
+
+    /// Requests a graceful stop of the running load test.
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+    }
 }
 
 /// Result produced by a worker after completing a load-test phase.
@@ -113,9 +128,8 @@ fn record_result(
 
     let latency_us = res.duration.as_micros() as u64;
 
-    histogram
-        .record(latency_us)
-        .expect("latency must fit histogram bounds");
+    // Saturate instead of panicking if a latency ever exceeds the histogram range.
+    histogram.saturating_record(latency_us);
 
     if let Some(code) = res.status_code {
         *status_counts.entry(code).or_insert(0) += 1;
@@ -154,6 +168,7 @@ async fn send_ramp_up_jobs(
     count: u32,
     target_rps: u32,
     ramp_up_duration: Duration,
+    shared: &SharedMetrics,
 ) {
     let start = Instant::now();
 
@@ -165,7 +180,7 @@ async fn send_ramp_up_jobs(
 
         tokio::time::sleep_until(deadline.into()).await;
 
-        if job_tx.send(job).await.is_err() {
+        if shared.is_cancelled() || job_tx.send(job).await.is_err() {
             break;
         }
     }
@@ -258,10 +273,9 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
     match (count, duration) {
         // Measurement phase: send exactly `count` requests.
         (Some(count), None) => {
-            if let Some(ramp_up_duration) = ramp_up_duration {
-                let rps = rps.expect("ramp-up requires rps");
-
-                send_ramp_up_jobs(&job_tx, job, count, rps, ramp_up_duration).await;
+            if let Some((ramp_up_duration, rps)) = ramp_up_duration.zip(rps) {
+                send_ramp_up_jobs(&job_tx, job, count, rps, ramp_up_duration, &shared_metrics)
+                    .await;
             } else if let Some(rps) = rps {
                 let mut interval = tokio::time::interval(Duration::from_secs_f64(1.0 / rps as f64));
 
@@ -270,13 +284,13 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
                 for _ in 0..count {
                     interval.tick().await;
 
-                    if job_tx.send(job).await.is_err() {
+                    if shared_metrics.is_cancelled() || job_tx.send(job).await.is_err() {
                         break;
                     }
                 }
             } else {
                 for _ in 0..count {
-                    if job_tx.send(job).await.is_err() {
+                    if shared_metrics.is_cancelled() || job_tx.send(job).await.is_err() {
                         break;
                     }
                 }
@@ -295,7 +309,7 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
                 loop {
                     interval.tick().await;
 
-                    if Instant::now() >= deadline {
+                    if Instant::now() >= deadline || shared_metrics.is_cancelled() {
                         break;
                     }
 
@@ -304,7 +318,7 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
                     }
                 }
             } else {
-                while Instant::now() < deadline {
+                while Instant::now() < deadline && !shared_metrics.is_cancelled() {
                     if job_tx.send(job).await.is_err() {
                         break;
                     }

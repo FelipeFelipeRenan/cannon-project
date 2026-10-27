@@ -2,6 +2,14 @@
 name = "cannon"
 version = "2.1.0"
 edition = "2021"
+description = "High-performance load testing for HTTP and raw TCP services"
+readme = "README.md"
+repository = "https://github.com/FelipeFelipeRenan/cannon-project"
+homepage = "https://github.com/FelipeFelipeRenan/cannon-project"
+keywords = ["load-testing", "benchmark", "http", "tcp", "performance"]
+categories = ["command-line-utilities", "development-tools::testing", "network-programming"]
+exclude = ["/.github", "/scripts", "/docs", "/install.sh"]
+# license = "..."   # TODO: set once the project license is chosen (and add a LICENSE file)
 
 [profile.release]
 lto = true
@@ -16,15 +24,7 @@ path = "src/main.rs"
 [dependencies]
 mimalloc = { version = "0.1", default-features = false }
 tokio = { version = "1.52.3", features = ["full"] }
-reqwest = {
-    version = "0.12.28",
-    default-features = false,
-    features = [
-        "json",
-        "rustls-tls",
-        "http2"
-    ]
-}
+reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls", "http2"] }
 clap = { version = "4.6.1", features = ["derive"] }
 hdrhistogram = "7.5.4"
 indicatif = "0.18.4"
@@ -44,20 +44,7 @@ rand = "0.10.1"
 
 uuid = { version = "1.23.3", features = ["v4"] }
 
-self_update = {
-    version = "1.3.0",
-    default-features = false,
-    features = [
-        "github",
-        "reqwest",
-        "progress-bar",
-        "rustls",
-        "archive-tar",
-        "archive-zip",
-        "tar",
-        "zip"
-    ]
-}
+self_update = { version = "1.3.0", default-features = false, features = ["github", "reqwest", "progress-bar", "rustls", "archive-tar", "archive-zip", "tar", "zip"] }
 async-trait = "0.1.89"
 itoa = "1.0.18"
 fastrand = "2.4.1"

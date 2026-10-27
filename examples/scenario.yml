@@ -1,3 +1,4 @@
+# Example Cannon scenario. Run with: cannon -f examples/scenario.yml
 url: "http://localhost:8081/api/v1/accounts"
 method: "GET"
 workers: 150
@@ -6,5 +7,5 @@ rps: 1000
 apdex_t: 150
 insecure: true
 headers:
-  - "Authorization: Bearer my_super_secret_token_from_env_vars"
+  - "Authorization: Bearer <your-token>"
   - "Content-Type: application/json"

@@ -170,7 +170,7 @@ pub struct Args {
         short = 'A',
         long,
         value_name = "AGENT",
-        default_value = "Cannon/1.0",
+        default_value = concat!("Cannon/", env!("CARGO_PKG_VERSION")),
         help_heading = "Request"
     )]
     pub user_agent: String,
@@ -312,6 +312,14 @@ impl Args {
             parse_ramp_up_duration(ramp_up)?;
         }
 
+        if self.mode.eq_ignore_ascii_case("tcp") && self.body.is_none() {
+            return Err(
+                "TCP mode requires a request payload (use --body, e.g. --body '{{value:1:u8}}'): \
+                 Cannon waits for a response after every write"
+                    .to_string(),
+            );
+        }
+
         if self.timeout == 0 {
             return Err("timeout must be greater than 0".to_string());
         }
@@ -371,6 +379,9 @@ pub struct FileConfig {
     /// Target request rate in requests per second.
     pub rps: Option<u32>,
 
+    /// Duration of the ramp-up phase.
+    pub ramp_up: Option<String>,
+
     /// Request timeout in milliseconds.
     pub timeout: Option<u64>,
 
@@ -401,11 +412,23 @@ pub struct FileConfig {
     /// TCP connection establishment timeout in milliseconds.
     pub connect_timeout: Option<u64>,
 
+    /// HTTP User-Agent header.
+    pub user_agent: Option<String>,
+
     /// Protocol used by the target.
     pub mode: Option<String>,
 
     /// Duration of the warm-up phase in seconds.
     pub warmup: Option<u64>,
+
+    /// JSON output file.
+    pub output: Option<String>,
+
+    /// HTML report output file.
+    pub html: Option<String>,
+
+    /// Latency percentiles as a comma-separated string.
+    pub percentiles: Option<String>,
 
     /// File used to save the performance baseline.
     pub save_baseline: Option<String>,
@@ -497,6 +520,32 @@ mod tests {
         assert_eq!(args.count, 100);
         assert_eq!(args.workers, 10, "O default de workers deve ser 10");
         assert_eq!(args.method, "GET", "O default do método deve ser GET");
+    }
+
+    #[test]
+    fn tcp_mode_requires_a_body() {
+        let args =
+            Args::try_parse_from(["cannon", "--mode", "tcp", "-u", "127.0.0.1:9000"]).unwrap();
+
+        let error = args.validate().unwrap_err();
+
+        assert!(error.contains("TCP mode requires a request payload"));
+    }
+
+    #[test]
+    fn tcp_mode_with_body_is_valid() {
+        let args = Args::try_parse_from([
+            "cannon",
+            "--mode",
+            "tcp",
+            "-u",
+            "127.0.0.1:9000",
+            "--body",
+            "{{value:1:u8}}",
+        ])
+        .unwrap();
+
+        assert!(args.validate().is_ok());
     }
 
     #[test]

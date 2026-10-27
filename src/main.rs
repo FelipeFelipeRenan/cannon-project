@@ -2,7 +2,9 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use cannon::args::parser::Args;
-use cannon::report::cli::{generate_html_report, print_banner, print_summary, to_ms, FinalReport};
+use cannon::report::cli::{
+    generate_html_report, percentile_label, print_banner, print_summary, to_ms, FinalReport,
+};
 use clap::{CommandFactory, FromArgMatches};
 use colored::Colorize;
 use hdrhistogram::Histogram;
@@ -27,7 +29,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|error| format!("invalid configuration: {error}"))?;
 
     if args.pin_threads {
-        let core_ids = core_affinity::get_core_ids().expect("❌ Error reading CPU topology");
+        let core_ids = core_affinity::get_core_ids()
+            .filter(|ids| !ids.is_empty())
+            .ok_or("could not read the CPU topology required by --pin-threads")?;
         let core_count = core_ids.len();
         let core_idx = Arc::new(AtomicUsize::new(0));
 
@@ -55,9 +59,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let url_str = if args.mode.to_lowercase() == "tcp" {
-        args.url
-            .clone()
-            .expect("❌ Error: The address (IP:Port) from the target is required!")
+        args.url.clone().ok_or(
+            "the target address (IP:Port) is required: use -u/--url or set `url` in the config file",
+        )?
     } else {
         cannon::security::url_validator::validate_and_extract(&args.url)
             .map_err(|error| format!("invalid target URL: {error}"))?
@@ -115,7 +119,13 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     let target: Arc<cannon::client::target::Target> = if args.mode.to_lowercase() == "tcp" {
         let clean_addr = url_str.replace("http://", "").replace("https://", "");
-        let tcp_target = cannon::client::target::Target::new_tcp(&clean_addr, args.workers).await?;
+        let tcp_target = cannon::client::target::Target::new_tcp_with_timeouts(
+            &clean_addr,
+            args.workers,
+            std::time::Duration::from_millis(args.connect_timeout),
+            std::time::Duration::from_millis(args.timeout),
+        )
+        .await?;
 
         Arc::new(tcp_target)
     } else {
@@ -197,7 +207,20 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             _ = tokio::signal::ctrl_c() => {
-                println!("\n\n{}", "⚠️ Interruption detected! Waiting workers...".yellow().bold());
+                shared_metrics.cancel();
+                pb.abandon();
+                println!(
+                    "\n\n{}",
+                    "⚠️ Interruption detected! Finishing in-flight requests (press Ctrl-C again to force quit)..."
+                        .yellow()
+                        .bold()
+                );
+
+                tokio::spawn(async {
+                    let _ = tokio::signal::ctrl_c().await;
+                    std::process::exit(130);
+                });
+
                 break;
             }
         }
@@ -264,6 +287,8 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         total_bytes_sent,
         total_bytes_received,
         &parsed_percentiles,
+        apdex,
+        args.apdex_t,
     );
 
     let current_p99_ms = hist.value_at_percentile(99.0) as f64 / 1000.0;
@@ -330,12 +355,12 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     if args.output.is_some() || args.html.is_some() {
         let percentiles_report = parsed_percentiles
             .iter()
-            .map(|&p| (format!("p{}", p * 100.0), to_ms(hist.value_at_quantile(p))))
+            .map(|&p| (percentile_label(p), to_ms(hist.value_at_quantile(p))))
             .collect();
 
         let report = FinalReport {
             target: url_str.clone(),
-            total_requests: args.count,
+            total_requests: u32::try_from(measured_requests).unwrap_or(u32::MAX),
             concurrency: args.workers,
             successes: success_count,
             failures: failure_count,
@@ -378,14 +403,15 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn update() -> Result<(), Box<dyn std::error::Error>> {
-    let target = if cfg!(target_os = "linux") {
-        "linux-x64"
-    } else if cfg!(target_os = "windows") {
-        "windows-x64.exe"
-    } else if cfg!(target_os = "macos") {
-        "macos-x64"
-    } else {
-        ""
+    let target = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("linux", "x86_64") => "linux-x64",
+        ("linux", "aarch64") => "linux-arm64",
+        ("macos", "x86_64") => "macos-x64",
+        ("macos", "aarch64") => "macos-arm64",
+        ("windows", "x86_64") => "windows-x64.exe",
+        (os, arch) => {
+            return Err(format!("no pre-built Cannon release for {os}/{arch}").into());
+        }
     };
 
     let status = self_update::backends::github::Update::configure()

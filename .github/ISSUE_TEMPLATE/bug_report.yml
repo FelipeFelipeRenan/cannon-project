@@ -1,0 +1,39 @@
+name: Bug report
+description: Something does not work as documented
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command or configuration
+      description: The exact `cannon ...` command (remove secrets) and/or YAML file.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: Relevant terminal output or error message.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Cannon version
+      description: Output of `cannon --version`.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and architecture
+      placeholder: "e.g. Ubuntu 24.04 x86_64, macOS 15 arm64, Windows 11"
+    validations:
+      required: true

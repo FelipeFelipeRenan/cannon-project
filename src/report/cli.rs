@@ -95,6 +95,26 @@ pub struct LatencyMetrics {
     pub value: String,
 }
 
+/// Formats a latency quantile (`0.0..=1.0`) as a short label such as `p99`
+/// or `p99.9`.
+///
+/// The value is rounded to six decimal places first so that floating-point
+/// noise from the `percent / 100 * 100` round trip never leaks into reports
+/// (for example `p7.000000000000001`).
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(cannon::report::cli::percentile_label(0.99), "p99");
+/// assert_eq!(cannon::report::cli::percentile_label(0.999), "p99.9");
+/// assert_eq!(cannon::report::cli::percentile_label(0.07), "p7");
+/// ```
+pub fn percentile_label(quantile: f64) -> String {
+    let percent = (quantile * 100.0 * 1_000_000.0).round() / 1_000_000.0;
+
+    format!("p{percent}")
+}
+
 /// Converts a duration expressed in microseconds to milliseconds.
 ///
 /// Cannon stores latency measurements in microseconds because the
@@ -221,6 +241,8 @@ pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()
 /// * `bytes_sent` - Total bytes sent to the target.
 /// * `bytes_recv` - Total bytes received from the target.
 /// * `percentiles` - Latency quantiles to display.
+/// * `apdex` - Apdex score (`0.0..=1.0`) computed from the histogram.
+/// * `apdex_t_ms` - Apdex satisfied threshold in milliseconds.
 #[allow(clippy::too_many_arguments)]
 pub fn print_summary(
     successes: u64,
@@ -235,10 +257,10 @@ pub fn print_summary(
     bytes_sent: u64,
     bytes_recv: u64,
     percentiles: &[f64],
+    apdex: f64,
+    apdex_t_ms: u64,
 ) {
     println!("\n{}", "--- 🏁 CANNON'S REPORT ---".bold().underline());
-    println!("Successes:     {}", successes);
-    println!("Failures:       {}", failures);
 
     let mut metrics = Vec::new();
     if successes > 0 {
@@ -255,16 +277,10 @@ pub fn print_summary(
         });
 
         for &p in percentiles {
-            let p_val = p * 100.0;
-
-            let p_label = if p_val.fract() == 0.0 {
-                if p_val == 50.0 {
-                    "p50 (Median)".to_string()
-                } else {
-                    format!("p{:.0}", p_val)
-                }
+            let p_label = if percentile_label(p) == "p50" {
+                "p50 (Median)".to_string()
             } else {
-                format!("p{}", p_val)
+                percentile_label(p)
             };
 
             metrics.push(LatencyMetrics {
@@ -282,11 +298,14 @@ pub fn print_summary(
         println!("\n{}", "-------------------------".bright_black());
     }
 
+    let metrics_is_empty = metrics.is_empty();
     let table = tabled::Table::new(metrics)
         .with(tabled::settings::Style::modern())
         .to_string();
 
-    println!("{}", table);
+    if !metrics_is_empty {
+        println!("{}", table);
+    }
     println!(
         "{} {} | {} {} | {} {:?}",
         "✅ Successes:".green().bold(),
@@ -299,20 +318,22 @@ pub fn print_summary(
 
     println!("\n{}", "-------------------------".bright_black());
 
-    println!("\n{}", "📊 STATUS CODES DISTRIBUTION".bold().bright_white());
+    if !status_counts.is_empty() {
+        println!("\n{}", "📊 STATUS CODES DISTRIBUTION".bold().bright_white());
 
-    let mut codes: Vec<_> = status_counts.into_iter().collect();
+        let mut codes: Vec<_> = status_counts.into_iter().collect();
 
-    codes.sort_by_key(|a| a.0);
+        codes.sort_by_key(|a| a.0);
 
-    for (code, count) in codes {
-        let color_code = match code {
-            200..=299 => code.to_string().green(),
-            400..=499 => code.to_string().yellow(),
-            _ => code.to_string().red(),
-        };
+        for (code, count) in codes {
+            let color_code = match code {
+                200..=299 => code.to_string().green(),
+                400..=499 => code.to_string().yellow(),
+                _ => code.to_string().red(),
+            };
 
-        println!("  HTTP {}: {}", color_code, count);
+            println!("  HTTP {}: {}", color_code, count);
+        }
     }
 
     if !error_counts.is_empty() {
@@ -321,7 +342,7 @@ pub fn print_summary(
         let mut sorted_errors: Vec<_> = error_counts.into_iter().collect();
         sorted_errors.sort_by_key(|item| std::cmp::Reverse(item.1));
         for (err, count) in sorted_errors {
-            let perc = (count as f64 / failures as f64) * 100.0;
+            let perc = (count as f64 / failures.max(1) as f64) * 100.0;
             println!(
                 "  {:<30} {:>6} ({:>4.1}%)",
                 err.yellow(),
@@ -347,8 +368,11 @@ pub fn print_summary(
 
     let total_secs = total.as_secs_f64();
 
-    let throughput_sent = sent_mb / total_secs;
-    let throughput_recv = recv_mb / total_secs;
+    let (throughput_sent, throughput_recv) = if total_secs > 0.0 {
+        (sent_mb / total_secs, recv_mb / total_secs)
+    } else {
+        (0.0, 0.0)
+    };
 
     let sent_mb_str = format!("{:.2}", sent_mb).magenta();
     let throughput_sent_str = format!("{:.2}", throughput_sent).yellow();
@@ -356,11 +380,11 @@ pub fn print_summary(
     let throughput_recv_str = format!("{:.2}", throughput_recv).yellow();
 
     println!(
-        "📤 Transfered:   {} MB totais ({} MB/s)",
+        "📤 Sent:         {} MB total ({} MB/s)",
         sent_mb_str, throughput_sent_str
     );
     println!(
-        "📥 Received:     {} MB totais ({} MB/s)",
+        "📥 Received:     {} MB total ({} MB/s)",
         recv_mb_str, throughput_recv_str
     );
     println!("\n{}", "-------------------------".bright_black());
@@ -371,13 +395,19 @@ pub fn print_summary(
         let efficiency = (actual_rps / target as f64) * 100.0;
         let rps_str = format!("{:.2}", actual_rps).yellow();
         println!("Target RPS:      {}", target.to_string().cyan());
-        println!("Real RPS:      {} ({:.1}%)", rps_str, efficiency);
+        println!("Actual RPS:      {} ({:.1}%)", rps_str, efficiency);
     } else {
         println!(
             "Mean RPS:     {} req/s",
             format!("{:.2}", actual_rps).yellow()
         );
     }
+
+    println!(
+        "Apdex (T={}ms): {}",
+        apdex_t_ms,
+        format!("{:.3}", apdex).yellow()
+    );
 
     println!("\n{}", "-------------------------".bright_black());
     println!("Test finished in {}s", total.as_secs());
@@ -414,6 +444,17 @@ mod tests {
         assert_eq!(to_ms(500), 0.5);
         assert_eq!(to_ms(1_500_000), 1500.0);
         assert_eq!(to_ms(0), 0.0);
+    }
+
+    #[test]
+    fn percentile_label_hides_floating_point_noise() {
+        assert_eq!(percentile_label(0.5), "p50");
+        assert_eq!(percentile_label(0.95), "p95");
+        assert_eq!(percentile_label(0.99), "p99");
+        assert_eq!(percentile_label(0.999), "p99.9");
+        assert_eq!(percentile_label(0.07), "p7");
+        assert_eq!(percentile_label(0.57), "p57");
+        assert_eq!(percentile_label(1.0), "p100");
     }
 
     #[test]

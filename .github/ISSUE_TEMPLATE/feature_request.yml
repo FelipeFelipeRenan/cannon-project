@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest an improvement or a new capability
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe your use case rather than a specific solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Proposed solution
+      description: How could Cannon help? Example commands are welcome.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

@@ -7,18 +7,33 @@ REPO="FelipeFelipeRenan/cannon-project"
 BINARY_NAME="cannon"
 INSTALL_DIR="/usr/local/bin"
 
-# Detect OS
+# Detect OS and CPU architecture
 OS_TYPE=$(uname -s)
+ARCH_TYPE=$(uname -m)
+
+case "$ARCH_TYPE" in
+    x86_64|amd64)
+        ARCH="x64"
+        ;;
+    aarch64|arm64)
+        ARCH="arm64"
+        ;;
+    *)
+        echo "Error: CPU architecture $ARCH_TYPE is not supported by this script."
+        exit 1
+        ;;
+esac
 
 case "$OS_TYPE" in
     Linux*)
-        ASSET_NAME="cannon-linux-x64"
+        ASSET_NAME="cannon-linux-$ARCH"
         ;;
     Darwin*)
-        ASSET_NAME="cannon-macos-x64"
+        ASSET_NAME="cannon-macos-$ARCH"
         ;;
     *)
         echo "Error: OS $OS_TYPE is not supported by this script."
+        echo "On Windows, download cannon-windows-x64.exe from the Releases page."
         exit 1
         ;;
 esac

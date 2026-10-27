@@ -57,7 +57,8 @@ impl TargetResult {
     /// Creates a failed request result.
     ///
     /// The supplied error message is stored in the result and all byte
-    /// counters are initialized to zero.
+    /// counters are initialized to zero. `assertion_success` stays `true`
+    /// because no response was available to evaluate an assertion against.
     pub fn fail(duration: Duration, error: String) -> Self {
         Self {
             success: false,
@@ -66,7 +67,9 @@ impl TargetResult {
             error: Some(error),
             bytes_sent: 0,
             bytes_received: 0,
-            assertion_success: false,
+            // A transport failure says nothing about the response assertion,
+            // so it must not be counted as an assertion failure.
+            assertion_success: true,
         }
     }
 }
@@ -106,6 +109,12 @@ pub enum Target {
 
         /// TCP address of the target.
         address: String,
+
+        /// Maximum time allowed to establish a connection.
+        connect_timeout: Duration,
+
+        /// Maximum time allowed for one write + one-byte read round trip.
+        request_timeout: Duration,
     },
 }
 
@@ -131,38 +140,74 @@ impl Target {
         }
     }
 
-    /// Creates a raw TCP target.
+    /// Creates a raw TCP target using the default timeouts (5 s to connect,
+    /// 30 s per request).
     ///
-    /// The target establishes a pool of TCP connections that can be reused by
-    /// workers during the load test. This avoids creating a new connection for
-    /// every request and allows multiple workers to generate concurrent traffic.
+    /// See [`Target::new_tcp_with_timeouts`] to configure them.
     ///
     /// # Errors
     ///
     /// Returns an error if the initial connection pool cannot be established.
     pub async fn new_tcp(address: &str, workers: u32) -> Result<Self, String> {
+        Self::new_tcp_with_timeouts(
+            address,
+            workers,
+            Duration::from_millis(5_000),
+            Duration::from_millis(30_000),
+        )
+        .await
+    }
+
+    /// Creates a raw TCP target with explicit timeouts.
+    ///
+    /// The target establishes a pool of TCP connections that can be reused by
+    /// workers during the load test. This avoids creating a new connection for
+    /// every request and allows multiple workers to generate concurrent traffic.
+    ///
+    /// `connect_timeout` bounds every connection attempt, and
+    /// `request_timeout` bounds each request (write plus the one-byte read).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the initial connection pool cannot be established.
+    pub async fn new_tcp_with_timeouts(
+        address: &str,
+        workers: u32,
+        connect_timeout: Duration,
+        request_timeout: Duration,
+    ) -> Result<Self, String> {
         let (tx, rx) = async_channel::bounded(workers as usize);
         println!("🔌 Establishing a pool of {} TCP connections...", workers);
         for _ in 0..workers {
-            match TcpStream::connect(address).await {
-                Ok(stream) => {
-                    let _ = tx.send(stream).await;
-                }
-                Err(e) => return Err(format!("Failed to connect: {}", e)),
-            }
+            let stream = Self::connect(address, connect_timeout)
+                .await
+                .map_err(|error| format!("Failed to connect: {error}"))?;
+
+            let _ = tx.send(stream).await;
         }
         Ok(Self::Tcp {
             pool_tx: tx,
             pool_rx: rx,
             address: address.to_string(),
+            connect_timeout,
+            request_timeout,
         })
+    }
+
+    async fn connect(address: &str, connect_timeout: Duration) -> Result<TcpStream, String> {
+        match tokio::time::timeout(connect_timeout, TcpStream::connect(address)).await {
+            Ok(Ok(stream)) => Ok(stream),
+            Ok(Err(error)) => Err(error.to_string()),
+            Err(_) => Err(format!("connection timed out after {connect_timeout:?}")),
+        }
     }
 
     async fn reconnect(
         pool_tx: &async_channel::Sender<TcpStream>,
         address: &str,
+        connect_timeout: Duration,
     ) -> Result<(), String> {
-        let stream = TcpStream::connect(address)
+        let stream = Self::connect(address, connect_timeout)
             .await
             .map_err(|error| format!("Reconnect Error: {error}"))?;
 
@@ -213,16 +258,20 @@ impl Target {
                                 let mut err = None;
                                 let mut ok = true;
                                 if let Some(expected) = expected_body {
-                                    if let Ok(text) = std::str::from_utf8(&bytes) {
-                                        if !text.contains(expected.as_ref().as_str()) {
-                                            err = Some(format!("Mismatch: missing '{}'", expected));
-                                            ok = false;
-                                        }
+                                    let text = String::from_utf8_lossy(&bytes);
+
+                                    if !text.contains(expected.as_ref().as_str()) {
+                                        err = Some(format!("Mismatch: missing '{}'", expected));
+                                        ok = false;
                                     }
                                 }
                                 (err, bytes.len() as u64, ok)
                             }
-                            Err(e) => (Some(format!("Read Error: {}", e)), 0, false),
+                            Err(e) => (
+                                Some(format!("Read Error: {}", e)),
+                                0,
+                                expected_body.is_none(),
+                            ),
                         };
                         TargetResult {
                             duration: start.elapsed(),
@@ -242,40 +291,55 @@ impl Target {
                 pool_tx,
                 pool_rx,
                 address,
+                connect_timeout,
+                request_timeout,
             } => {
-                if let Ok(mut stream) = pool_rx.recv().await {
-                    if let Err(error) = stream.write_all(payload).await {
-                        let reconnect_error = Self::reconnect(pool_tx, address).await.err();
+                let Ok(mut stream) = pool_rx.recv().await else {
+                    return TargetResult::fail(start.elapsed(), "TCP Pool Exhausted".to_string());
+                };
 
-                        let message = match reconnect_error {
-                            Some(reconnect_error) => {
-                                format!("Broken Pipe: {error}; {reconnect_error}")
-                            }
-                            None => format!("Broken Pipe: {error}"),
-                        };
-
-                        return TargetResult::fail(start.elapsed(), message);
-                    }
+                let round_trip = async {
+                    stream
+                        .write_all(payload)
+                        .await
+                        .map_err(|error| format!("Broken Pipe: {error}"))?;
 
                     let mut buffer = [0; 1];
-                    if let Err(error) = stream.read_exact(&mut buffer).await {
-                        let reconnect_error = Self::reconnect(pool_tx, address).await.err();
 
-                        let message = match reconnect_error {
-                            Some(reconnect_error) => {
-                                format!("Connection Reset: {error}; {reconnect_error}")
-                            }
-                            None => format!("Connection Reset: {error}"),
+                    stream
+                        .read_exact(&mut buffer)
+                        .await
+                        .map_err(|error| format!("Connection Reset: {error}"))?;
+
+                    Ok::<(), String>(())
+                };
+
+                let outcome = match tokio::time::timeout(*request_timeout, round_trip).await {
+                    Ok(result) => result,
+                    Err(_) => Err(format!("Timeout: no response within {request_timeout:?}")),
+                };
+
+                match outcome {
+                    Ok(()) => {
+                        let _ = pool_tx.send(stream).await;
+
+                        TargetResult::success(start.elapsed(), payload.len() as u64, 1)
+                    }
+                    Err(message) => {
+                        // The connection is in an unknown state: drop it and
+                        // refill the pool with a fresh one.
+                        drop(stream);
+
+                        let message = match Self::reconnect(pool_tx, address, *connect_timeout)
+                            .await
+                            .err()
+                        {
+                            Some(reconnect_error) => format!("{message}; {reconnect_error}"),
+                            None => message,
                         };
 
-                        return TargetResult::fail(start.elapsed(), message);
+                        TargetResult::fail(start.elapsed(), message)
                     }
-
-                    let _ = pool_tx.send(stream).await;
-
-                    TargetResult::success(start.elapsed(), payload.len() as u64, 1)
-                } else {
-                    TargetResult::fail(start.elapsed(), "TCP Pool Exhausted".to_string())
                 }
             }
         }
@@ -434,7 +498,10 @@ mod tests {
 
         assert!(!result.success);
         assert!(result.status_code.is_none());
-        assert!(!result.assertion_success);
+        assert!(
+            result.assertion_success,
+            "a network error is not an assertion failure"
+        );
         assert!(result.error.is_some());
         assert!(result
             .error
@@ -518,7 +585,7 @@ mod tests {
         let first_result = target.fire(b"ping").await;
 
         assert!(!first_result.success);
-        assert!(!first_result.assertion_success);
+        assert!(first_result.assertion_success);
         assert!(first_result.error.is_some());
 
         let second_result = target.fire(b"ping").await;
@@ -530,5 +597,57 @@ mod tests {
         assert!(second_result.error.is_none());
 
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn tcp_request_times_out_when_server_never_replies() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+
+        // Accept connections but never answer.
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+
+            while let Ok((stream, _)) = listener.accept().await {
+                held.push(stream);
+            }
+        });
+
+        let target = Target::new_tcp_with_timeouts(
+            &address,
+            1,
+            Duration::from_millis(500),
+            Duration::from_millis(150),
+        )
+        .await
+        .unwrap();
+
+        let started = std::time::Instant::now();
+        let result = target.fire(b"x").await;
+
+        assert!(!result.success);
+        assert!(result.error.unwrap().contains("Timeout"));
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "request must not hang past its timeout"
+        );
+    }
+
+    #[tokio::test]
+    async fn tcp_connect_fails_fast_for_unreachable_port() {
+        // Bind then drop to obtain a port nothing is listening on.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        drop(listener);
+
+        let result = Target::new_tcp_with_timeouts(
+            &address,
+            1,
+            Duration::from_millis(500),
+            Duration::from_millis(500),
+        )
+        .await;
+
+        assert!(result.is_err());
     }
 }
