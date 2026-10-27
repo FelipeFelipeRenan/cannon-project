@@ -9,7 +9,7 @@ homepage = "https://github.com/FelipeFelipeRenan/cannon-project"
 keywords = ["load-testing", "benchmark", "http", "tcp", "performance"]
 categories = ["command-line-utilities", "development-tools::testing", "network-programming"]
 exclude = ["/.github", "/scripts", "/docs", "/install.sh"]
-# license = "..."   # TODO: set once the project license is chosen (and add a LICENSE file)
+license = "MIT OR Apache-2.0"
 
 [profile.release]
 lto = true
