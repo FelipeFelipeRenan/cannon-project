@@ -718,9 +718,8 @@ See [`CHANGELOG.md`](CHANGELOG.md) for what changed in each release.
 
 # 📜 License
 
-Cannon is open source and distributed under the terms of the project's license.
-
-See [`LICENSE`](LICENSE) for details.
+Cannon is dual-licensed under the [MIT License](LICENSE-MIT) or the
+[Apache License, Version 2.0](LICENSE-APACHE), at your option.
 
 ---
 
