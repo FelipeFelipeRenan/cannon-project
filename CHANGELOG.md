@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🐛 Fixed
 
+- **Coordinated omission:** with `--rps`, latency is now measured from the *scheduled* send time, so a server stall is no longer hidden by workers waiting to send. The report shows the latency mode (`open-loop`/`closed-loop`) and the raw service time separately.
+- **TCP response framing:** Cannon used to read exactly one byte, so multi-byte replies left data in the socket and corrupted every later latency. Use `--tcp-read-bytes` / `--tcp-read-until`; a mismatch is reported as a `Response Framing` error.
+- **TCP hang:** when the server died, the connection pool shrank until requests waited forever (and Ctrl-C did not help). Broken connections are now replaced lazily, so requests fail fast.
+- **Regression gate:** a service that was completely down was reported as "87% faster" with exit 0. The gate now also checks the error rate, fails when nothing succeeded, and refuses to save such a baseline.
 - **`--ramp-up`:** the flag was parsed as a positional argument (and leaked source code into `--help`). It is now a real `--ramp-up <DURATION>` option and can also be set in YAML.
 - **YAML `headers`:** any config file containing `headers:` crashed with a panic. Fixed, with regression tests.
 - **TCP timeouts:** `--timeout` and `--connect-timeout` were ignored in TCP mode, so a server that never replied hung Cannon forever. Both are now enforced, and failed requests are reported as `Timeout` and replaced in the connection pool.
@@ -19,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🚀 Added
 
+- `--tcp-read-bytes`, `--tcp-read-until` (CLI and YAML) and `Target::new_tcp_with_options` / `TcpRead`.
+- `--max-error-rate` (CLI and YAML) and error-rate data in baseline files (older baselines still load).
+- Distinct exit codes: `2` gate failure, `130` SIGINT, `143` SIGTERM.
 - Apdex score (with its threshold) in the terminal summary.
 - `ramp_up`, `user_agent`, `percentiles`, `output` and `html` can now be set in the YAML config file.
 - Linux arm64 and macOS arm64 release binaries; `install.sh` and `--update` pick the right asset for the CPU architecture.
@@ -27,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🔄 Changed
 
+- Latency histograms/percentiles now contain **successful requests only**; failures appear in counters and the error breakdown. Apdex counts failed requests as frustrated.
+- The CSV export has an extra column with the service time; baseline files record `schema_version`, `error_rate_percent` and `latency_mode`.
+- Interrupting with Ctrl-C now exits with 130 instead of 0.
 - TCP mode now requires `--body`: Cannon always waits for a response after writing, so an empty payload could only hang. It now fails fast with an explanatory error.
 - The default `User-Agent` is `Cannon/<version>` instead of a hard-coded `Cannon/1.0`.
 - The JSON report's `total_requests` is the number of requests actually measured (it matches the requested count unless the run was interrupted).
@@ -73,10 +83,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🔧 Technical Changes
 
-- **Producer-Consumer Pattern:** Request engine and metrics aggregator communicate via Asynchronous MPSC Channels.
-- **Backpressure Management:** Strictly managed concurrency via semaphores to prevent socket exhaustion.
+- **Producer-Consumer Pattern:** Request engine and workers communicate via bounded async channels.
+- **Backpressure Management:** Bounded worker pool and job channel to prevent socket exhaustion.
 - **Polymorphic Enum:** `Target` enum with static dispatch (zero vtable overhead) for HTTP/TCP.
-- **HdrHistogram:** High-precision metrics recording latencies in microseconds, avoiding "coordinated omission".
+- **HdrHistogram:** High-precision metrics recording latencies in microseconds (coordinated omission is only avoided from 2.2.0 on, in `--rps` mode).
 - **Tokio Async Runtime:** Non-blocking I/O and multiplexing for maximum efficiency.
 
 ---

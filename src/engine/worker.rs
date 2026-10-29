@@ -642,14 +642,31 @@ mod tests {
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
 
-            let responses = [1u8; 10];
+            let mut buffer = [0u8; 64];
 
-            tokio::io::AsyncWriteExt::write_all(&mut stream, &responses)
-                .await
-                .unwrap();
+            // Answer every request with a 10-byte response.
+            while let Ok(count) = tokio::io::AsyncReadExt::read(&mut stream, &mut buffer).await {
+                if count == 0 {
+                    break;
+                }
+
+                tokio::io::AsyncWriteExt::write_all(&mut stream, &[1u8; 10])
+                    .await
+                    .unwrap();
+            }
         });
 
-        let target = Arc::new(Target::new_tcp(&address, 1).await.unwrap());
+        let target = Arc::new(
+            Target::new_tcp_with_options(
+                &address,
+                1,
+                Duration::from_secs(5),
+                Duration::from_secs(5),
+                crate::client::target::TcpRead::Bytes(10),
+            )
+            .await
+            .unwrap(),
+        );
 
         let metrics = Arc::new(SharedMetrics::default());
 
@@ -658,7 +675,7 @@ mod tests {
             run_workers(
                 10,
                 2,
-                None,
+                Some(PayloadTemplate::parse("ping").unwrap()),
                 None,
                 target,
                 metrics.clone(),
@@ -675,8 +692,8 @@ mod tests {
         assert_eq!(metrics.measured_requests.load(Ordering::Relaxed), 10);
         assert_eq!(metrics.successes.load(Ordering::Relaxed), 10);
         assert_eq!(metrics.failures.load(Ordering::Relaxed), 0);
-        assert_eq!(metrics.bytes_sent.load(Ordering::Relaxed), 0);
-        assert_eq!(metrics.bytes_received.load(Ordering::Relaxed), 10);
+        assert_eq!(metrics.bytes_sent.load(Ordering::Relaxed), 40);
+        assert_eq!(metrics.bytes_received.load(Ordering::Relaxed), 100);
 
         assert_eq!(results.len(), 2);
 

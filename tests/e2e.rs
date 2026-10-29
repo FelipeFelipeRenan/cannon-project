@@ -106,6 +106,57 @@ fn start_tcp_echo_server() -> String {
     address
 }
 
+/// A TCP server that answers every received chunk with `reply`, after `delay`.
+fn start_tcp_reply_server(reply: &'static [u8], delay: Duration) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+
+    thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            thread::spawn(move || {
+                let mut buffer = [0u8; 64];
+
+                while let Ok(count) = stream.read(&mut buffer) {
+                    if count == 0 {
+                        return;
+                    }
+
+                    thread::sleep(delay);
+
+                    if stream.write_all(reply).is_err() {
+                        return;
+                    }
+                }
+            });
+        }
+    });
+
+    address
+}
+
+/// A TCP server that serves a few requests and then disappears entirely.
+fn start_dying_tcp_server(requests_before_death: usize) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buffer = [0u8; 64];
+
+        for _ in 0..requests_before_death {
+            if stream.read(&mut buffer).unwrap_or(0) == 0 {
+                return;
+            }
+
+            let _ = stream.write_all(&[1u8]);
+        }
+
+        // Dropping the stream and the listener makes every reconnect fail.
+    });
+
+    address
+}
+
 /// A TCP server that accepts connections and never answers.
 fn start_silent_tcp_server() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -477,6 +528,168 @@ fn tcp_mode_round_trips_a_binary_payload() {
 
     assert_eq!(json["successes"], 100);
     assert_eq!(json["failures"], 0);
+
+    let _ = std::fs::remove_file(report);
+}
+
+#[test]
+fn tcp_read_bytes_measures_the_full_multi_byte_response() {
+    // The server needs ~50 ms to produce an 8-byte reply. Reading only one
+    // byte used to report ~0 ms for the following requests.
+    let address = start_tcp_reply_server(b"12345678", Duration::from_millis(50));
+    let report = temp_path("tcp-multibyte.json");
+
+    let output = run_cannon(&[
+        "--mode",
+        "tcp",
+        "-u",
+        &address,
+        "-c",
+        "20",
+        "-w",
+        "1",
+        "--body",
+        "ping",
+        "--tcp-read-bytes",
+        "8",
+        "-o",
+        report.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let json = read_json(&report);
+
+    assert_eq!(json["successes"], 20);
+    assert_eq!(json["bytes_received"], 160);
+    assert!(
+        json["service_time"]["p50_ms"].as_f64().unwrap() >= 45.0,
+        "p50 should reflect the real round trip: {json}"
+    );
+
+    let _ = std::fs::remove_file(report);
+}
+
+#[test]
+fn tcp_with_the_wrong_framing_reports_a_clear_error() {
+    let address = start_tcp_reply_server(b"12345678", Duration::from_millis(5));
+    let report = temp_path("tcp-framing.json");
+
+    let output = run_cannon(&[
+        "--mode",
+        "tcp",
+        "-u",
+        &address,
+        "-c",
+        "10",
+        "-w",
+        "1",
+        "--body",
+        "ping",
+        "-o",
+        report.to_str().unwrap(),
+    ]);
+
+    let combined = format!("{}{}", stdout(&output), stderr(&output));
+
+    assert!(combined.contains("Response Framing"), "{combined}");
+    assert!(combined.contains("--tcp-read-bytes"), "{combined}");
+
+    let _ = std::fs::remove_file(report);
+}
+
+#[test]
+fn tcp_read_until_waits_for_the_delimiter() {
+    let address = start_tcp_reply_server(b"+OK\r\n", Duration::from_millis(20));
+    let report = temp_path("tcp-until.json");
+
+    let output = run_cannon(&[
+        "--mode",
+        "tcp",
+        "-u",
+        &address,
+        "-c",
+        "10",
+        "-w",
+        "1",
+        "--body",
+        "ping",
+        "--tcp-read-until",
+        "\\r\\n",
+        "-o",
+        report.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let json = read_json(&report);
+
+    assert_eq!(json["successes"], 10);
+    assert_eq!(json["bytes_received"], 50);
+
+    let _ = std::fs::remove_file(report);
+}
+
+#[test]
+fn tcp_read_bytes_zero_does_not_wait_for_a_response() {
+    let address = start_silent_tcp_server();
+
+    let started = Instant::now();
+
+    let output = run_cannon(&[
+        "--mode",
+        "tcp",
+        "-u",
+        &address,
+        "-c",
+        "20",
+        "-w",
+        "2",
+        "--body",
+        "ping",
+        "--tcp-read-bytes",
+        "0",
+    ]);
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn tcp_server_dying_mid_run_does_not_hang_cannon() {
+    let address = start_dying_tcp_server(3);
+    let report = temp_path("tcp-dead.json");
+
+    let started = Instant::now();
+
+    let _ = run_cannon(&[
+        "--mode",
+        "tcp",
+        "-u",
+        &address,
+        "-c",
+        "200",
+        "-w",
+        "2",
+        "--body",
+        "ping",
+        "--timeout",
+        "500",
+        "--connect-timeout",
+        "500",
+        "-o",
+        report.to_str().unwrap(),
+    ]);
+
+    assert!(
+        started.elapsed() < Duration::from_secs(15),
+        "cannon hung after the server died"
+    );
+
+    let json = read_json(&report);
+
+    assert!(json["successes"].as_u64().unwrap() >= 1);
+    assert!(json["failures"].as_u64().unwrap() > 100);
 
     let _ = std::fs::remove_file(report);
 }

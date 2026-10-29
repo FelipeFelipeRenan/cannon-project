@@ -133,6 +133,22 @@ pub fn merge_with_yaml(
             }
         }
 
+        if let Some(tcp_read_bytes) = conf.tcp_read_bytes {
+            if !was_provided_by_cli(matches, "tcp_read_bytes")
+                && !was_provided_by_cli(matches, "tcp_read_until")
+            {
+                args.tcp_read_bytes = Some(tcp_read_bytes);
+            }
+        }
+
+        if let Some(tcp_read_until) = conf.tcp_read_until {
+            if !was_provided_by_cli(matches, "tcp_read_until")
+                && !was_provided_by_cli(matches, "tcp_read_bytes")
+            {
+                args.tcp_read_until = Some(tcp_read_until);
+            }
+        }
+
         if let Some(pin_threads) = conf.pin_threads {
             if !was_provided_by_cli(matches, "pin_threads") {
                 args.pin_threads = pin_threads;

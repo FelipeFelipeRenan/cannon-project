@@ -217,11 +217,19 @@ async fn run_app(args: Args) -> AppResult<ExitCode> {
 
     let target: Arc<cannon::client::target::Target> = if is_tcp {
         let clean_addr = url_str.replace("http://", "").replace("https://", "");
-        let tcp_target = cannon::client::target::Target::new_tcp_with_timeouts(
+        let tcp_read = match &args.tcp_read_until {
+            Some(delimiter) => cannon::client::target::TcpRead::Until(
+                cannon::args::parser::unescape_delimiter(delimiter),
+            ),
+            None => cannon::client::target::TcpRead::Bytes(args.tcp_read_bytes.unwrap_or(1)),
+        };
+
+        let tcp_target = cannon::client::target::Target::new_tcp_with_options(
             &clean_addr,
             args.workers,
             Duration::from_millis(args.connect_timeout),
             Duration::from_millis(args.timeout),
+            tcp_read,
         )
         .await?;
 
