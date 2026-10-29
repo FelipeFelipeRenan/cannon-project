@@ -258,7 +258,7 @@ pub struct Args {
     )]
     pub compare_baseline: Option<String>,
 
-    /// Maximum allowed latency regression percentage.
+    /// Maximum allowed p99 latency regression percentage.
     #[arg(
         long,
         value_name = "PERCENT",
@@ -266,6 +266,14 @@ pub struct Args {
         help_heading = "Baselines"
     )]
     pub tolerance: f64,
+
+    /// Fail (exit status 2) when more than this percentage of requests fail.
+    ///
+    /// With `--compare-baseline` and no explicit value, the error rate saved
+    /// in the baseline is the limit, so a run can never be less reliable
+    /// than the baseline.
+    #[arg(long, value_name = "PERCENT", help_heading = "Baselines")]
+    pub max_error_rate: Option<f64>,
 
     // ─────────────────────────────────────────────────────────────────────
     // Runtime
@@ -332,8 +340,14 @@ impl Args {
             return Err("apdex_t must be greater than 0".to_string());
         }
 
-        if self.tolerance < 0.0 {
+        if self.tolerance.is_nan() || self.tolerance < 0.0 {
             return Err("tolerance must be greater than or equal to 0".to_string());
+        }
+
+        if let Some(rate) = self.max_error_rate {
+            if !(0.0..=100.0).contains(&rate) {
+                return Err("max-error-rate must be between 0 and 100".to_string());
+            }
         }
 
         if reqwest::Method::from_bytes(self.method.as_bytes()).is_err() {
@@ -436,8 +450,11 @@ pub struct FileConfig {
     /// File containing the baseline used for comparison.
     pub compare_baseline: Option<String>,
 
-    /// Maximum allowed latency regression percentage.
+    /// Maximum allowed p99 latency regression percentage.
     pub tolerance: Option<f64>,
+
+    /// Maximum allowed percentage of failed requests.
+    pub max_error_rate: Option<f64>,
 
     /// Pin Tokio worker threads to CPU cores.
     pub pin_threads: Option<bool>,
@@ -520,6 +537,24 @@ mod tests {
         assert_eq!(args.count, 100);
         assert_eq!(args.workers, 10, "O default de workers deve ser 10");
         assert_eq!(args.method, "GET", "O default do método deve ser GET");
+    }
+
+    #[test]
+    fn max_error_rate_must_be_a_percentage() {
+        let parse = |value: &str| {
+            let flag = format!("--max-error-rate={value}");
+
+            Args::try_parse_from(["cannon", "-u", "http://x.test", flag.as_str()])
+                .unwrap()
+                .validate()
+        };
+
+        assert!(parse("0").is_ok());
+        assert!(parse("2.5").is_ok());
+        assert!(parse("100").is_ok());
+        assert!(parse("100.1").is_err());
+        assert!(parse("-1").is_err());
+        assert!(parse("NaN").is_err());
     }
 
     #[test]

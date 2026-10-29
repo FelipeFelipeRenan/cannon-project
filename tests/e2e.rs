@@ -364,7 +364,7 @@ fn csv_export_has_a_header_and_one_row_per_request() {
 
     assert_eq!(
         lines.next(),
-        Some("relative_time_ms,status,latency_ms,error")
+        Some("relative_time_ms,status,latency_ms,error,service_ms")
     );
     assert_eq!(lines.count(), 25);
 
@@ -428,7 +428,11 @@ fn baseline_comparison_fails_on_regression_and_passes_otherwise() {
         "--tolerance",
         "5",
     ]);
-    assert!(!regressed.status.success(), "regression must exit non-zero");
+    assert_eq!(
+        regressed.status.code(),
+        Some(2),
+        "gate failures exit with 2"
+    );
     assert!(stdout(&regressed).contains("Regression detected"));
 
     // A very generous baseline passes.
@@ -611,7 +615,7 @@ fn ctrl_c_stops_the_run_and_still_prints_a_partial_report() {
         thread::sleep(Duration::from_millis(50));
     };
 
-    assert!(status.success());
+    assert_eq!(status.code(), Some(130), "interrupted runs exit with 130");
 
     let mut out = String::new();
     child
@@ -665,4 +669,174 @@ fn network_errors_are_not_reported_as_assertion_failures() {
         !text.contains("Assertion Failures"),
         "no --expect was configured, so nothing can be an assertion failure:\n{text}"
     );
+}
+
+fn unused_port_url() -> String {
+    // Bind then drop to obtain a port nothing is listening on.
+    let port = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+
+    format!("http://127.0.0.1:{port}/")
+}
+
+#[test]
+fn a_service_that_is_down_fails_the_gate_instead_of_looking_faster() {
+    let server = HttpServer::start("ok");
+    let baseline = temp_path("down-baseline.json");
+
+    let saved = run_cannon(&[
+        "-u",
+        &server.url(),
+        "-c",
+        "50",
+        "--save-baseline",
+        baseline.to_str().unwrap(),
+    ]);
+    assert!(saved.status.success(), "stderr: {}", stderr(&saved));
+
+    // Same baseline, but the service is now unreachable: every request fails
+    // almost instantly, which used to be reported as "87% faster".
+    let report = temp_path("down-report.json");
+
+    let output = run_cannon(&[
+        "-u",
+        &unused_port_url(),
+        "-c",
+        "20",
+        "-w",
+        "2",
+        "--compare-baseline",
+        baseline.to_str().unwrap(),
+        "-o",
+        report.to_str().unwrap(),
+    ]);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stdout(&output).contains("no request succeeded"));
+    assert!(!stdout(&output).contains("improvement"));
+
+    // The report is still written so CI can attach it to the failed job.
+    assert_eq!(read_json(&report)["failures"], 20);
+
+    let _ = std::fs::remove_file(baseline);
+    let _ = std::fs::remove_file(report);
+}
+
+#[test]
+fn max_error_rate_fails_the_gate_only_above_the_limit() {
+    let url = unused_port_url();
+
+    let strict = run_cannon(&["-u", &url, "-c", "10", "--max-error-rate", "50"]);
+    assert_eq!(strict.status.code(), Some(2));
+    assert!(stdout(&strict).contains("Error rate 100.00%"));
+
+    let lenient = run_cannon(&["-u", &url, "-c", "10", "--max-error-rate", "100"]);
+    assert!(lenient.status.success(), "stderr: {}", stderr(&lenient));
+
+    // Without any threshold, failures are reported but are not fatal.
+    let none = run_cannon(&["-u", &url, "-c", "10"]);
+    assert!(none.status.success());
+}
+
+#[test]
+fn saving_a_baseline_from_a_broken_run_is_refused_and_keeps_the_old_file() {
+    let baseline = temp_path("keep-baseline.json");
+    let original = r#"{"p99_ms": 12.5, "rps": 100.0}"#;
+
+    std::fs::write(&baseline, original).unwrap();
+
+    let output = run_cannon(&[
+        "-u",
+        &unused_port_url(),
+        "-c",
+        "5",
+        "--save-baseline",
+        baseline.to_str().unwrap(),
+    ]);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stdout(&output).contains("Baseline not saved"));
+    assert_eq!(std::fs::read_to_string(&baseline).unwrap(), original);
+
+    let _ = std::fs::remove_file(baseline);
+}
+
+#[test]
+fn a_bad_baseline_file_is_reported_before_the_test_runs() {
+    let missing = run_cannon(&[
+        "-u",
+        "http://127.0.0.1:1/",
+        "--compare-baseline",
+        "/definitely/not/here.json",
+    ]);
+
+    assert_eq!(missing.status.code(), Some(1));
+    assert!(stderr(&missing).contains("cannot read baseline"));
+    assert!(!stdout(&missing).contains("Preparing the Cannon"));
+}
+
+#[test]
+fn latency_mode_and_service_time_are_reported() {
+    let server = HttpServer::start("ok");
+    let paced = temp_path("mode-paced.json");
+    let closed = temp_path("mode-closed.json");
+
+    let output = run_cannon(&[
+        "-u",
+        &server.url(),
+        "-c",
+        "20",
+        "--rps",
+        "200",
+        "-o",
+        paced.to_str().unwrap(),
+    ]);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let json = read_json(&paced);
+    assert_eq!(json["latency_mode"], "open-loop");
+    assert_eq!(json["target_rps"], 200);
+    assert!(json["service_time"]["p99_ms"].is_number());
+    assert_eq!(json["schema_version"], 2);
+
+    let output = run_cannon(&[
+        "-u",
+        &server.url(),
+        "-c",
+        "20",
+        "-o",
+        closed.to_str().unwrap(),
+    ]);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(read_json(&closed)["latency_mode"], "closed-loop");
+
+    let _ = std::fs::remove_file(paced);
+    let _ = std::fs::remove_file(closed);
+}
+
+#[test]
+fn failed_requests_do_not_pollute_latency_statistics() {
+    let report = temp_path("failed-latency.json");
+
+    let output = run_cannon(&[
+        "-u",
+        &unused_port_url(),
+        "-c",
+        "10",
+        "-o",
+        report.to_str().unwrap(),
+    ]);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let json = read_json(&report);
+
+    assert_eq!(json["failures"], 10);
+    assert_eq!(json["error_rate_percent"], 100.0);
+    assert_eq!(json["p99_ms"], 0.0, "no success, so no latency");
+    assert_eq!(json["apdex_score"], 0.0);
+
+    let _ = std::fs::remove_file(report);
 }

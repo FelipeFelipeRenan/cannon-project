@@ -2,63 +2,129 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use cannon::args::parser::Args;
-use cannon::report::cli::{
-    generate_html_report, percentile_label, print_banner, print_summary, to_ms, FinalReport,
-};
+use cannon::engine::worker::{run_workers, CsvRecord, SharedMetrics};
+use cannon::report::cli::{generate_html_report, print_banner, print_summary, FinalReport};
+use cannon::report::gate::{self, Baseline, GateOptions};
+use cannon::report::summary::RunSummary;
 use clap::{CommandFactory, FromArgMatches};
 use colored::Colorize;
-use hdrhistogram::Histogram;
 use indicatif::{ProgressBar, ProgressStyle};
+use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let command = Args::command();
-    let matches = command.get_matches();
+type AppResult<T> = Result<T, Box<dyn std::error::Error>>;
+
+/// Exit status used when a performance gate (regression or error rate) fails.
+const EXIT_GATE_FAILED: u8 = 2;
+
+fn main() -> ExitCode {
+    match run() {
+        Ok(code) => code,
+        Err(error) => {
+            eprintln!("{} {error}", "error:".red().bold());
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run() -> AppResult<ExitCode> {
+    let matches = Args::command().get_matches();
     let mut args = Args::from_arg_matches(&matches)?;
 
     if args.update {
         update()?;
-        return Ok(());
+        return Ok(ExitCode::SUCCESS);
     }
 
     cannon::args::config::merge_with_yaml(&mut args, &matches)?;
     args.validate()
         .map_err(|error| format!("invalid configuration: {error}"))?;
 
-    if args.pin_threads {
-        let core_ids = core_affinity::get_core_ids()
-            .filter(|ids| !ids.is_empty())
-            .ok_or("could not read the CPU topology required by --pin-threads")?;
-        let core_count = core_ids.len();
-        let core_idx = Arc::new(AtomicUsize::new(0));
+    let runtime = build_runtime(&args)?;
 
-        println!(
-            "CPU Pinning active: Applying Strict CPU Affinity ({} cores)...",
-            core_count
-        );
+    runtime.block_on(run_app(args))
+}
 
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(core_count)
-            .on_thread_start(move || {
-                let idx = core_idx.fetch_add(1, Ordering::SeqCst) % core_count;
-                let target_core = core_ids[idx];
-                let _ = core_affinity::set_for_current(target_core);
-            })
-            .build()?;
+fn build_runtime(args: &Args) -> AppResult<tokio::runtime::Runtime> {
+    if !args.pin_threads {
+        return Ok(tokio::runtime::Runtime::new()?);
+    }
 
-        rt.block_on(async { run_app(args).await })
-    } else {
-        let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(async { run_app(args).await })
+    let core_ids = core_affinity::get_core_ids()
+        .filter(|ids| !ids.is_empty())
+        .ok_or("could not read the CPU topology required by --pin-threads")?;
+    let core_count = core_ids.len();
+    let core_idx = Arc::new(AtomicUsize::new(0));
+
+    println!(
+        "CPU Pinning active: Applying Strict CPU Affinity ({} cores)...",
+        core_count
+    );
+
+    Ok(tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(core_count)
+        .on_thread_start(move || {
+            let idx = core_idx.fetch_add(1, Ordering::SeqCst) % core_count;
+            let target_core = core_ids[idx];
+            let _ = core_affinity::set_for_current(target_core);
+        })
+        .build()?)
+}
+
+/// Waits for Ctrl-C (SIGINT) or, on Unix, SIGTERM.
+///
+/// Returns the conventional exit status for the signal received.
+async fn shutdown_signal() -> u8 {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        match signal(SignalKind::terminate()) {
+            Ok(mut terminate) => {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => 130,
+                    _ = terminate.recv() => 143,
+                }
+            }
+            Err(_) => {
+                let _ = tokio::signal::ctrl_c().await;
+                130
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+        130
     }
 }
 
-async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
-    let url_str = if args.mode.to_lowercase() == "tcp" {
+/// Fails early (before a long test) if an output file cannot be written.
+fn ensure_writable(path: &str, what: &str) -> AppResult<()> {
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map(|_| ())
+        .map_err(|error| format!("cannot write {what} '{path}': {error}").into())
+}
+
+fn load_baseline(path: &str) -> AppResult<Baseline> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|error| format!("cannot read baseline '{path}': {error}"))?;
+
+    Baseline::parse(&content).map_err(|error| format!("baseline '{path}': {error}").into())
+}
+
+async fn run_app(args: Args) -> AppResult<ExitCode> {
+    let is_tcp = args.mode.eq_ignore_ascii_case("tcp");
+
+    let url_str = if is_tcp {
         args.url.clone().ok_or(
             "the target address (IP:Port) is required: use -u/--url or set `url` in the config file",
         )?
@@ -73,6 +139,31 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         .filter_map(|s| s.trim().parse::<f64>().ok())
         .map(|p| p / 100.0)
         .collect();
+
+    let ramp_up_duration = args
+        .ramp_up
+        .as_deref()
+        .map(cannon::args::parser::parse_ramp_up_duration)
+        .transpose()?;
+
+    // Fail fast: everything that can be checked before the (possibly long)
+    // test starts is checked here, not after it.
+    let baseline = args
+        .compare_baseline
+        .as_deref()
+        .map(load_baseline)
+        .transpose()?;
+
+    for (path, what) in [
+        (&args.output, "JSON report"),
+        (&args.html, "HTML report"),
+        (&args.csv, "CSV file"),
+        (&args.save_baseline, "baseline"),
+    ] {
+        if let Some(path) = path {
+            ensure_writable(path, what)?;
+        }
+    }
 
     let http_client = cannon::client::http::build_optimized_client(&args)?;
 
@@ -93,15 +184,15 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     println!("⏱️ Timeout: {}ms", args.timeout.to_string().yellow());
 
-    let start_test = Instant::now();
+    match args.rps {
+        Some(rps) => println!(
+            "📐 Load: open-loop at {} req/s (latency measured from the scheduled send time)",
+            rps.to_string().yellow()
+        ),
+        None => println!("📐 Load: closed-loop, as fast as the workers can go"),
+    }
 
-    let warmup_duration = std::time::Duration::from_secs(args.warmup);
-
-    let ramp_up_duration = args
-        .ramp_up
-        .as_deref()
-        .map(cannon::args::parser::parse_ramp_up_duration)
-        .transpose()?;
+    let warmup_duration = Duration::from_secs(args.warmup);
 
     if args.warmup > 0 {
         println!(
@@ -115,6 +206,7 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .map(|body| cannon::payload::generator::PayloadTemplate::parse(&body))
         .transpose()?;
+
     if let Some(template) = &template_arc {
         for warning in template.warnings() {
             eprintln!("{} {warning}", "⚠️ ".yellow());
@@ -123,13 +215,13 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     let expect_arc = args.expect.clone().map(Arc::new);
 
-    let target: Arc<cannon::client::target::Target> = if args.mode.to_lowercase() == "tcp" {
+    let target: Arc<cannon::client::target::Target> = if is_tcp {
         let clean_addr = url_str.replace("http://", "").replace("https://", "");
         let tcp_target = cannon::client::target::Target::new_tcp_with_timeouts(
             &clean_addr,
             args.workers,
-            std::time::Duration::from_millis(args.connect_timeout),
-            std::time::Duration::from_millis(args.timeout),
+            Duration::from_millis(args.connect_timeout),
+            Duration::from_millis(args.timeout),
         )
         .await?;
 
@@ -150,28 +242,40 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     pb.set_style(
         ProgressStyle::default_bar()
             .template("{spinner:.bold.green} [{elapsed_precise}] {bar:40.magenta/blue} {pos:>7}/{len:7} {msg}")
-            .unwrap()
+            .map_err(|error| format!("invalid progress bar template: {error}"))?
             .progress_chars("━╾─"),
     );
 
-    use std::sync::atomic::Ordering;
-    let shared_metrics = Arc::new(cannon::engine::worker::SharedMetrics::default());
+    let shared_metrics = Arc::new(SharedMetrics::default());
 
     let mut csv_tx = None;
     let mut csv_handle = None;
 
     if let Some(path) = &args.csv {
-        let (tx, mut rx) = mpsc::channel::<cannon::engine::worker::CsvRecord>(buffer_size);
+        let (tx, mut rx) = mpsc::channel::<CsvRecord>(buffer_size);
         csv_tx = Some(tx);
-        let path_clone = path.clone();
 
-        csv_handle = Some(tokio::spawn(async move {
-            let mut writer = csv::Writer::from_path(&path_clone)?;
+        let mut writer = csv::Writer::from_path(path)?;
 
-            writer.write_record(["relative_time_ms", "status", "latency_ms", "error"])?;
+        writer.write_record([
+            "relative_time_ms",
+            "status",
+            "latency_ms",
+            "error",
+            "service_ms",
+        ])?;
 
-            while let Some(rec) = rx.recv().await {
-                writer.write_record([rec.relative_ms, rec.status, rec.latency_ms, rec.error])?;
+        // The writer does blocking file I/O, so it gets its own thread
+        // instead of stalling the async runtime.
+        csv_handle = Some(tokio::task::spawn_blocking(move || {
+            while let Some(rec) = rx.blocking_recv() {
+                writer.write_record([
+                    rec.relative_ms,
+                    rec.status,
+                    rec.latency_ms,
+                    rec.error,
+                    rec.service_ms,
+                ])?;
             }
 
             writer.flush()?;
@@ -179,7 +283,8 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             Ok::<(), csv::Error>(())
         }));
     }
-    let engine_handle = tokio::spawn(cannon::engine::worker::run_workers(
+
+    let mut engine_handle = tokio::spawn(run_workers(
         args.count,
         args.workers,
         template_arc,
@@ -187,24 +292,30 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         target,
         shared_metrics.clone(),
         csv_tx,
-        start_test,
+        Instant::now(),
         warmup_duration,
         ramp_up_duration,
     ));
 
+    let shutdown = shutdown_signal();
+    tokio::pin!(shutdown);
+
+    let mut interrupted_status: Option<u8> = None;
+    let mut ticker = tokio::time::interval(Duration::from_millis(500));
     let mut last_total = 0;
     let mut last_time = Instant::now();
 
-    while !engine_handle.is_finished() {
+    let engine_result = loop {
         tokio::select! {
-            _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {
-                let succ = shared_metrics.successes.load(Ordering::Relaxed);
-                let fail = shared_metrics.failures.load(Ordering::Relaxed);
-                let total = succ + fail;
+            result = &mut engine_handle => break result,
+            _ = ticker.tick() => {
+                let total = shared_metrics.successes.load(Ordering::Relaxed)
+                    + shared_metrics.failures.load(Ordering::Relaxed);
 
                 pb.set_position(total);
 
                 let elapsed = last_time.elapsed().as_secs_f64();
+
                 if elapsed >= 0.1 && total > last_total {
                     let rps = (total - last_total) as f64 / elapsed;
                     pb.set_message(format!("| ⚡ {:.1} RPS", rps));
@@ -212,28 +323,33 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                     last_time = Instant::now();
                 }
             }
-            _ = tokio::signal::ctrl_c() => {
+            status = &mut shutdown, if interrupted_status.is_none() => {
                 shared_metrics.cancel();
-                pb.abandon();
+                interrupted_status = Some(status);
+
                 println!(
                     "\n\n{}",
-                    "⚠️ Interruption detected! Finishing in-flight requests (press Ctrl-C again to force quit)..."
+                    "⚠️ Interruption detected! Stopping and reporting what was measured so far \
+                     (signal again to quit immediately)..."
                         .yellow()
                         .bold()
                 );
 
                 tokio::spawn(async {
-                    let _ = tokio::signal::ctrl_c().await;
+                    shutdown_signal().await;
                     std::process::exit(130);
                 });
-
-                break;
             }
         }
-    }
+    };
 
-    let (worker_results, measurement_duration) = engine_handle.await??;
-    pb.finish_with_message("Finished");
+    let (worker_results, measurement_duration) = engine_result??;
+
+    if interrupted_status.is_some() {
+        pb.abandon_with_message("Interrupted");
+    } else {
+        pb.finish_with_message("Finished");
+    }
 
     if let Some(handle) = csv_handle {
         handle.await??;
@@ -243,153 +359,38 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let mut hist = Histogram::<u64>::new_with_bounds(1, 86_400_000_000, 3)?;
-    let mut status_counts = std::collections::HashMap::new();
-    let mut error_counts = std::collections::HashMap::new();
-    let mut assertion_failures = 0;
-
-    for w in worker_results {
-        let _ = hist.add(w.histogram);
-        for (k, v) in w.status_counts {
-            *status_counts.entry(k).or_insert(0) += v;
-        }
-        for (k, v) in w.error_counts {
-            *error_counts.entry(k).or_insert(0) += v;
-        }
-        assertion_failures += w.assertion_failures;
-    }
-
-    let success_count = shared_metrics.successes.load(Ordering::Relaxed);
-    let failure_count = shared_metrics.failures.load(Ordering::Relaxed);
-    let total_bytes_sent = shared_metrics.bytes_sent.load(Ordering::Relaxed);
-    let total_bytes_received = shared_metrics.bytes_received.load(Ordering::Relaxed);
-    let measured_requests = shared_metrics.measured_requests.load(Ordering::Relaxed);
-    let total_secs = measurement_duration.as_secs_f64();
-    let actual_rps = if total_secs > 0.0 {
-        measured_requests as f64 / total_secs
-    } else {
-        0.0
-    };
-
-    let t_us = args.apdex_t * 1000;
-    let satisfied = hist.count_between(0, t_us);
-    let tolerating = hist.count_between(t_us + 1, t_us * 4);
-    let apdex = if !hist.is_empty() {
-        (satisfied as f64 + (tolerating as f64 / 2.0)) / hist.len() as f64
-    } else {
-        0.0
-    };
+    let summary = RunSummary::aggregate(
+        worker_results,
+        &shared_metrics,
+        measurement_duration,
+        args.rps.is_some(),
+    )?;
 
     print_summary(
-        success_count,
-        failure_count,
-        &hist,
-        measurement_duration,
+        &summary,
+        args.count,
         args.rps,
-        actual_rps,
-        status_counts.clone(),
-        error_counts.clone(),
-        assertion_failures,
-        total_bytes_sent,
-        total_bytes_received,
         &parsed_percentiles,
-        apdex,
         args.apdex_t,
     );
 
-    let current_p99_ms = hist.value_at_percentile(99.0) as f64 / 1000.0;
-
-    if let Some(path) = &args.save_baseline {
-        let baseline_data = serde_json::json!({
-            "p99_ms": current_p99_ms,
-            "rps": actual_rps
-        });
-
-        let json_str = serde_json::to_string_pretty(&baseline_data)?;
-        std::fs::write(path, json_str)?;
-
-        println!(
-            "\n💾 Performance baseline saved successfully to: {}",
-            path.bright_green()
-        );
-    }
-
-    if let Some(path) = &args.compare_baseline {
-        let content = std::fs::read_to_string(path)?;
-        let baseline = serde_json::from_str::<serde_json::Value>(&content)?;
-
-        let base_p99 = baseline["p99_ms"]
-            .as_f64()
-            .ok_or("baseline is missing a valid 'p99_ms' value")?;
-
-        if base_p99 <= 0.0 {
-            return Err("baseline 'p99_ms' must be greater than 0".into());
-        }
-
-        if current_p99_ms > base_p99 {
-            let degradation = ((current_p99_ms - base_p99) / base_p99) * 100.0;
-
-            println!(
-                "\n⚠️ Performance degradation: {:.2}% slower than baseline",
-                degradation
-            );
-
-            if degradation > args.tolerance {
-                println!(
-                    "❌ Regression detected: degradation exceeds tolerance of {:.2}%",
-                    args.tolerance
-                );
-                return Err(format!(
-                    "performance regression exceeded tolerance: {:.2}% > {:.2}%",
-                    degradation, args.tolerance
-                )
-                .into());
-            }
-        } else {
-            let improvement = ((base_p99 - current_p99_ms) / base_p99) * 100.0;
-
-            println!(
-                "\n🚀 Performance improvement: {:.2}% faster than baseline",
-                improvement
-            );
-        }
-    }
-
-    let status_for_report = status_counts.clone();
-    let errors_for_report = error_counts.clone();
+    // Reports are always written, even when the gate fails, so that CI can
+    // attach them to the failed job.
+    let report = FinalReport::new(
+        &summary,
+        &url_str,
+        args.workers,
+        args.rps,
+        args.apdex_t,
+        &parsed_percentiles,
+    );
 
     if args.output.is_some() || args.html.is_some() {
-        let percentiles_report = parsed_percentiles
-            .iter()
-            .map(|&p| (percentile_label(p), to_ms(hist.value_at_quantile(p))))
-            .collect();
-
-        let report = FinalReport {
-            target: url_str.clone(),
-            total_requests: u32::try_from(measured_requests).unwrap_or(u32::MAX),
-            concurrency: args.workers,
-            successes: success_count,
-            failures: failure_count,
-            min_ms: to_ms(hist.min()),
-            avg_ms: to_ms(hist.mean() as u64),
-            p50_ms: to_ms(hist.value_at_quantile(0.5)),
-            p95_ms: to_ms(hist.value_at_quantile(0.95)),
-            p99_ms: to_ms(hist.value_at_quantile(0.99)),
-            max_ms: to_ms(hist.max()),
-            actual_rps,
-            bytes_sent: total_bytes_sent,
-            bytes_received: total_bytes_received,
-            status_codes: status_for_report,
-            errors: errors_for_report,
-            duration_secs: total_secs,
-            apdex_score: apdex,
-            percentiles: percentiles_report,
-        };
-
         let json_data = serde_json::to_string_pretty(&report)?;
 
         if let Some(path) = &args.output {
-            std::fs::write(path, &json_data)?;
+            std::fs::write(path, &json_data)
+                .map_err(|error| format!("cannot write JSON report '{path}': {error}"))?;
             println!(
                 "📂 JSON report saved successfully to {}!",
                 path.bright_cyan()
@@ -397,7 +398,8 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if let Some(path) = &args.html {
-            generate_html_report(path, &json_data)?;
+            generate_html_report(path, &json_data)
+                .map_err(|error| format!("cannot write HTML report '{path}': {error}"))?;
             println!(
                 "🌐 HTML report saved successfully to {}!",
                 path.bright_cyan()
@@ -405,10 +407,58 @@ async fn run_app(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    Ok(())
+    let mut gate_failures = Vec::new();
+
+    if let Some(path) = &args.save_baseline {
+        match Baseline::from_summary(&summary) {
+            Ok(baseline) => {
+                std::fs::write(path, serde_json::to_string_pretty(&baseline)?)
+                    .map_err(|error| format!("cannot write baseline '{path}': {error}"))?;
+
+                println!(
+                    "\n💾 Performance baseline saved successfully to: {}",
+                    path.bright_green()
+                );
+            }
+            Err(reason) => gate_failures.push(format!("❌ Baseline not saved: {reason}")),
+        }
+    }
+
+    if let Some(status) = interrupted_status {
+        println!("\nGate checks are skipped because the run was interrupted.");
+
+        return Ok(ExitCode::from(status));
+    }
+
+    let outcome = gate::evaluate(
+        &summary,
+        baseline.as_ref(),
+        &GateOptions {
+            tolerance_percent: args.tolerance,
+            max_error_rate_percent: args.max_error_rate,
+        },
+    );
+
+    for note in &outcome.notes {
+        println!("\n{note}");
+    }
+
+    gate_failures.extend(outcome.failures);
+
+    if gate_failures.is_empty() {
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    for failure in &gate_failures {
+        println!("\n{}", failure.red().bold());
+    }
+
+    eprintln!("{} performance gate failed", "error:".red().bold());
+
+    Ok(ExitCode::from(EXIT_GATE_FAILED))
 }
 
-fn update() -> Result<(), Box<dyn std::error::Error>> {
+fn update() -> AppResult<()> {
     let target = match (std::env::consts::OS, std::env::consts::ARCH) {
         ("linux", "x86_64") => "linux-x64",
         ("linux", "aarch64") => "linux-arm64",
@@ -440,56 +490,4 @@ fn update() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use hdrhistogram::Histogram;
-
-    #[test]
-    fn test_histogram_percentile_math() {
-        let mut hist = Histogram::<u64>::new(3).expect("Failed to create histogram");
-
-        for i in 1..=100 {
-            hist.record(i).unwrap();
-        }
-
-        assert_eq!(
-            hist.value_at_quantile(0.50),
-            50,
-            "The median (p50) should be 50"
-        );
-        assert_eq!(hist.value_at_quantile(0.95), 95, "The p95 should be 95");
-        assert_eq!(hist.value_at_quantile(0.99), 99, "The p99 should be 99");
-        assert_eq!(hist.max(), 100, "The maximum latency should be 100");
-        assert_eq!(hist.min(), 1, "The minimum latency should be 1");
-    }
-
-    #[test]
-    fn test_apdex_calculation_logic() {
-        let mut hist = Histogram::<u64>::new(3).unwrap();
-
-        for _ in 0..60 {
-            hist.record(40).unwrap();
-        }
-        for _ in 0..30 {
-            hist.record(150).unwrap();
-        }
-        for _ in 0..10 {
-            hist.record(300).unwrap();
-        }
-
-        let apdex_t = 50;
-        let satisfied = hist.count_between(0, apdex_t);
-        let tolerating = hist.count_between(apdex_t + 1, apdex_t * 4);
-
-        let apdex_score = (satisfied as f64 + (tolerating as f64 / 2.0)) / 100.0;
-
-        assert_eq!(satisfied, 60);
-        assert_eq!(tolerating, 30);
-        assert_eq!(
-            apdex_score, 0.75,
-            "The calculated Apdex Score should be 0.75"
-        );
-    }
 }

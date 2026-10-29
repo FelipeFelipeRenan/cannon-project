@@ -127,6 +127,12 @@ pub fn merge_with_yaml(
             }
         }
 
+        if let Some(max_error_rate) = conf.max_error_rate {
+            if !was_provided_by_cli(matches, "max_error_rate") {
+                args.max_error_rate = Some(max_error_rate);
+            }
+        }
+
         if let Some(pin_threads) = conf.pin_threads {
             if !was_provided_by_cli(matches, "pin_threads") {
                 args.pin_threads = pin_threads;
@@ -354,6 +360,7 @@ csv: o.csv
 save_baseline: b.json
 compare_baseline: c.json
 tolerance: 7.5
+max_error_rate: 1.5
 pin_threads: true
 "#,
         );
