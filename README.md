@@ -257,9 +257,15 @@ cannon -u "$API_URL/health" -c 5000 \
   --tolerance 10
 ```
 
-Cannon compares the **p99 latency** with the baseline. If it is slower by more
-than `--tolerance` percent (default `5`), it prints the regression and exits
-with a **non-zero status**, which fails the CI job.
+Cannon compares the **p99 latency of successful requests** with the baseline.
+If it is slower by more than `--tolerance` percent (default `5`), it prints the
+regression and exits with status **2**, which fails the CI job.
+
+The **error rate** is checked too: a service that is down answers (with errors)
+very quickly, so latency alone would make it look faster. By default the limit
+is the error rate stored in the baseline; set it explicitly with
+`--max-error-rate <PERCENT>`. A run without any successful request always
+fails the gate, and a baseline cannot be saved from such a run.
 
 ---
 
@@ -375,8 +381,23 @@ cannon \
   --body '{{value:1:u8}}'
 ```
 
-TCP mode writes the payload on a persistent connection and then waits for
-**one byte** of response, so a payload (`--body`) is required. `--timeout` and
+TCP mode writes the payload on a persistent connection and then waits for the
+response, so a payload (`--body`) is required. TCP has no message boundaries,
+so tell Cannon where a response ends (the default is **one byte**):
+
+| Flag                      | Meaning                                                    |
+| ------------------------- | ---------------------------------------------------------- |
+| `--tcp-read-bytes <N>`    | Read exactly `N` bytes per response (`0` = do not wait)    |
+| `--tcp-read-until <DELIM>`| Read until the response ends with `DELIM` (e.g. `'\r\n'`)  |
+
+```bash
+cannon --mode tcp -u 127.0.0.1:6379 --body 'PING\r\n' --tcp-read-until '\r\n'
+```
+
+If the server sends more data than Cannon read, the run reports a
+`Response Framing` error instead of producing meaningless latencies. When a
+connection breaks it is replaced by the next request, so a server that goes
+away produces fast failures rather than a hung run. `--timeout` and
 `--connect-timeout` apply to TCP just like HTTP; requests that get no answer
 are reported as `Timeout` failures.
 
@@ -454,7 +475,10 @@ printed and exported. Press **Ctrl-C** again to quit immediately.
 | Code | Meaning                                                              |
 | ---- | -------------------------------------------------------------------- |
 | `0`  | The run finished (request failures are reported, not fatal)          |
-| `1`  | Invalid configuration, unreachable target, or baseline regression    |
+| `1`  | Invalid configuration or an internal/IO error                        |
+| `2`  | Regression gate failed (p99 regression or error rate too high)      |
+| `130`| Interrupted with Ctrl-C (SIGINT); the partial report is still written|
+| `143`| Terminated (SIGTERM); the partial report is still written            |
 
 ---
 

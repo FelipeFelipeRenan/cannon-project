@@ -99,13 +99,18 @@ pub enum Target {
         expected_body: Option<Arc<String>>,
     },
 
-    /// Raw TCP target backed by a pool of reusable connections.
+    /// Raw TCP target backed by a pool of reusable connection slots.
     Tcp {
-        /// Channel used to return connections to the TCP pool.
-        pool_tx: Sender<TcpStream>,
+        /// Channel used to return connection slots to the pool.
+        pool_tx: Sender<Option<TcpConn>>,
 
-        /// Channel used to acquire connections from the TCP pool.
-        pool_rx: Receiver<TcpStream>,
+        /// Channel used to acquire connection slots from the pool.
+        ///
+        /// A slot is `None` when its connection broke; the next request that
+        /// takes it opens a fresh one. Slots are always returned, so the pool
+        /// never shrinks and a request can never wait for a connection that
+        /// will not come back.
+        pool_rx: Receiver<Option<TcpConn>>,
 
         /// TCP address of the target.
         address: String,
@@ -113,9 +118,42 @@ pub enum Target {
         /// Maximum time allowed to establish a connection.
         connect_timeout: Duration,
 
-        /// Maximum time allowed for one write + one-byte read round trip.
+        /// Maximum time allowed for one write + response round trip.
         request_timeout: Duration,
+
+        /// How the end of a response is recognised.
+        read: TcpRead,
     },
+}
+
+/// How Cannon recognises the end of a response in raw TCP mode.
+///
+/// TCP has no message boundaries, so Cannon must be told how much to read
+/// after each write. Reading too little leaves bytes in the socket that are
+/// then mistaken for the *next* response, which makes latencies meaningless.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TcpRead {
+    /// Read exactly this many bytes (`0` sends the payload and does not wait
+    /// for any response).
+    Bytes(usize),
+
+    /// Read until the response ends with this delimiter (for example `\r\n`).
+    Until(Vec<u8>),
+}
+
+impl Default for TcpRead {
+    fn default() -> Self {
+        Self::Bytes(1)
+    }
+}
+
+/// Largest response accepted in [`TcpRead::Until`] mode.
+const MAX_TCP_RESPONSE: usize = 1024 * 1024;
+
+/// A pooled TCP connection.
+pub struct TcpConn {
+    stream: TcpStream,
+    requests: u32,
 }
 
 impl Target {
@@ -141,9 +179,9 @@ impl Target {
     }
 
     /// Creates a raw TCP target using the default timeouts (5 s to connect,
-    /// 30 s per request).
+    /// 30 s per request) that reads one byte per response.
     ///
-    /// See [`Target::new_tcp_with_timeouts`] to configure them.
+    /// See [`Target::new_tcp_with_options`] to configure them.
     ///
     /// # Errors
     ///
@@ -158,14 +196,8 @@ impl Target {
         .await
     }
 
-    /// Creates a raw TCP target with explicit timeouts.
-    ///
-    /// The target establishes a pool of TCP connections that can be reused by
-    /// workers during the load test. This avoids creating a new connection for
-    /// every request and allows multiple workers to generate concurrent traffic.
-    ///
-    /// `connect_timeout` bounds every connection attempt, and
-    /// `request_timeout` bounds each request (write plus the one-byte read).
+    /// Creates a raw TCP target with explicit timeouts that reads one byte
+    /// per response.
     ///
     /// # Errors
     ///
@@ -176,14 +208,50 @@ impl Target {
         connect_timeout: Duration,
         request_timeout: Duration,
     ) -> Result<Self, String> {
-        let (tx, rx) = async_channel::bounded(workers as usize);
+        Self::new_tcp_with_options(
+            address,
+            workers,
+            connect_timeout,
+            request_timeout,
+            TcpRead::default(),
+        )
+        .await
+    }
+
+    /// Creates a raw TCP target.
+    ///
+    /// The target establishes a pool of `workers` TCP connections that are
+    /// reused for every request. `connect_timeout` bounds every connection
+    /// attempt, `request_timeout` bounds each write plus response, and `read`
+    /// says how a response is delimited.
+    ///
+    /// If a connection breaks, the request that noticed fails and the next
+    /// one transparently opens a new connection, so a target that goes away
+    /// produces fast, explicit failures instead of a hung run.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the initial connection pool cannot be established.
+    pub async fn new_tcp_with_options(
+        address: &str,
+        workers: u32,
+        connect_timeout: Duration,
+        request_timeout: Duration,
+        read: TcpRead,
+    ) -> Result<Self, String> {
+        let (tx, rx) = async_channel::bounded(workers.max(1) as usize);
         println!("🔌 Establishing a pool of {} TCP connections...", workers);
         for _ in 0..workers {
             let stream = Self::connect(address, connect_timeout)
                 .await
                 .map_err(|error| format!("Failed to connect: {error}"))?;
 
-            let _ = tx.send(stream).await;
+            let _ = tx
+                .send(Some(TcpConn {
+                    stream,
+                    requests: 0,
+                }))
+                .await;
         }
         Ok(Self::Tcp {
             pool_tx: tx,
@@ -191,6 +259,7 @@ impl Target {
             address: address.to_string(),
             connect_timeout,
             request_timeout,
+            read,
         })
     }
 
@@ -202,21 +271,75 @@ impl Target {
         }
     }
 
-    async fn reconnect(
-        pool_tx: &async_channel::Sender<TcpStream>,
-        address: &str,
-        connect_timeout: Duration,
-    ) -> Result<(), String> {
-        let stream = Self::connect(address, connect_timeout)
+    /// Writes `payload` and reads one response; returns the bytes received.
+    async fn tcp_round_trip(
+        conn: &mut TcpConn,
+        payload: &[u8],
+        read: &TcpRead,
+    ) -> Result<u64, String> {
+        conn.stream
+            .write_all(payload)
             .await
-            .map_err(|error| format!("Reconnect Error: {error}"))?;
+            .map_err(|error| format!("Broken Pipe: {error}"))?;
 
-        pool_tx
-            .send(stream)
-            .await
-            .map_err(|error| format!("TCP Pool Error: {error}"))?;
+        let received = match read {
+            TcpRead::Bytes(0) => 0,
+            TcpRead::Bytes(count) => {
+                let mut buffer = [0u8; 256];
 
-        Ok(())
+                if *count <= buffer.len() {
+                    conn.stream.read_exact(&mut buffer[..*count]).await
+                } else {
+                    conn.stream.read_exact(&mut vec![0u8; *count]).await
+                }
+                .map_err(|error| format!("Connection Reset: {error}"))?;
+
+                *count as u64
+            }
+            TcpRead::Until(delimiter) => {
+                let mut response: Vec<u8> = Vec::with_capacity(64);
+                let mut chunk = [0u8; 1024];
+
+                while !response.ends_with(delimiter) {
+                    let read_now = conn
+                        .stream
+                        .read(&mut chunk)
+                        .await
+                        .map_err(|error| format!("Connection Reset: {error}"))?;
+
+                    if read_now == 0 {
+                        return Err("Connection Closed before the response delimiter".to_string());
+                    }
+
+                    response.extend_from_slice(&chunk[..read_now]);
+
+                    if response.len() > MAX_TCP_RESPONSE {
+                        return Err(
+                            "Response Framing: no delimiter found in the first 1 MiB".to_string()
+                        );
+                    }
+                }
+
+                response.len() as u64
+            }
+        };
+
+        // Early on, check that the response did not contain more than was
+        // read: leftover bytes would be taken for the next response and make
+        // every following latency look instantaneous.
+        if conn.requests < 3 && !matches!(read, TcpRead::Bytes(0)) {
+            let mut extra = [0u8; 1];
+
+            if matches!(conn.stream.try_read(&mut extra), Ok(count) if count > 0) {
+                return Err(
+                    "Response Framing: the server sent more data than Cannon read; \
+                            set --tcp-read-bytes or --tcp-read-until to match the protocol"
+                        .to_string(),
+                );
+            }
+        }
+
+        Ok(received)
     }
 
     /// Executes a single request against the target.
@@ -293,26 +416,33 @@ impl Target {
                 address,
                 connect_timeout,
                 request_timeout,
+                read,
             } => {
-                let Ok(mut stream) = pool_rx.recv().await else {
-                    return TargetResult::fail(start.elapsed(), "TCP Pool Exhausted".to_string());
+                let Ok(slot) = pool_rx.recv().await else {
+                    return TargetResult::fail(start.elapsed(), "TCP Pool Closed".to_string());
                 };
 
-                let round_trip = async {
-                    stream
-                        .write_all(payload)
-                        .await
-                        .map_err(|error| format!("Broken Pipe: {error}"))?;
+                // Every path below hands a slot back to the pool, so waiting
+                // for one can never block forever.
+                let mut conn = match slot {
+                    Some(conn) => conn,
+                    None => match Self::connect(address, *connect_timeout).await {
+                        Ok(stream) => TcpConn {
+                            stream,
+                            requests: 0,
+                        },
+                        Err(error) => {
+                            let _ = pool_tx.send(None).await;
 
-                    let mut buffer = [0; 1];
-
-                    stream
-                        .read_exact(&mut buffer)
-                        .await
-                        .map_err(|error| format!("Connection Reset: {error}"))?;
-
-                    Ok::<(), String>(())
+                            return TargetResult::fail(
+                                start.elapsed(),
+                                format!("Connect Error: {error}"),
+                            );
+                        }
+                    },
                 };
+
+                let round_trip = Self::tcp_round_trip(&mut conn, payload, read);
 
                 let outcome = match tokio::time::timeout(*request_timeout, round_trip).await {
                     Ok(result) => result,
@@ -320,23 +450,19 @@ impl Target {
                 };
 
                 match outcome {
-                    Ok(()) => {
-                        let _ = pool_tx.send(stream).await;
+                    Ok(received) => {
+                        conn.requests = conn.requests.saturating_add(1);
 
-                        TargetResult::success(start.elapsed(), payload.len() as u64, 1)
+                        let _ = pool_tx.send(Some(conn)).await;
+
+                        TargetResult::success(start.elapsed(), payload.len() as u64, received)
                     }
                     Err(message) => {
                         // The connection is in an unknown state: drop it and
-                        // refill the pool with a fresh one.
-                        drop(stream);
+                        // let the next request open a fresh one.
+                        drop(conn);
 
-                        let message = match Self::reconnect(pool_tx, address, *connect_timeout)
-                            .await
-                            .err()
-                        {
-                            Some(reconnect_error) => format!("{message}; {reconnect_error}"),
-                            None => message,
-                        };
+                        let _ = pool_tx.send(None).await;
 
                         TargetResult::fail(start.elapsed(), message)
                     }
@@ -649,5 +775,123 @@ mod tests {
         .await;
 
         assert!(result.is_err());
+    }
+
+    async fn serve_once(reply: &'static [u8]) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buffer = [0u8; 16];
+
+            while let Ok(count) = stream.read(&mut buffer).await {
+                if count == 0 {
+                    break;
+                }
+
+                stream.write_all(reply).await.unwrap();
+            }
+        });
+
+        (address, server)
+    }
+
+    async fn tcp_with(address: &str, read: TcpRead) -> Target {
+        Target::new_tcp_with_options(
+            address,
+            1,
+            Duration::from_secs(1),
+            Duration::from_secs(2),
+            read,
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn tcp_reads_a_fixed_number_of_bytes() {
+        let (address, _server) = serve_once(b"12345678").await;
+        let target = tcp_with(&address, TcpRead::Bytes(8)).await;
+
+        for _ in 0..5 {
+            let result = target.fire(b"ping").await;
+
+            assert!(result.success, "{:?}", result.error);
+            assert_eq!(result.bytes_received, 8);
+        }
+    }
+
+    #[tokio::test]
+    async fn tcp_reads_until_a_delimiter() {
+        let (address, _server) = serve_once(b"+OK\r\n").await;
+        let target = tcp_with(&address, TcpRead::Until(b"\r\n".to_vec())).await;
+
+        let result = target.fire(b"ping").await;
+
+        assert!(result.success, "{:?}", result.error);
+        assert_eq!(result.bytes_received, 5);
+    }
+
+    #[tokio::test]
+    async fn tcp_without_response_does_not_wait() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+
+        tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.unwrap();
+
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        });
+
+        let target = tcp_with(&address, TcpRead::Bytes(0)).await;
+        let result = target.fire(b"ping").await;
+
+        assert!(result.success);
+        assert_eq!(result.bytes_received, 0);
+    }
+
+    #[tokio::test]
+    async fn tcp_detects_a_response_longer_than_the_framing() {
+        let (address, _server) = serve_once(b"12345678").await;
+        let target = tcp_with(&address, TcpRead::Bytes(1)).await;
+
+        // Give the whole reply time to arrive before the check.
+        let result = target.fire(b"ping").await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let second = target.fire(b"ping").await;
+
+        assert!(
+            !result.success || !second.success,
+            "framing mismatch must be reported"
+        );
+    }
+
+    #[tokio::test]
+    async fn tcp_fails_fast_forever_after_the_server_dies() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+
+            drop(stream);
+            // The listener is dropped here too, so reconnecting is refused.
+        });
+
+        let target = tcp_with(&address, TcpRead::Bytes(1)).await;
+
+        server.await.unwrap();
+
+        // Many more requests than connections: none of them may hang.
+        let all = tokio::time::timeout(Duration::from_secs(5), async {
+            for _ in 0..20 {
+                assert!(!target.fire(b"ping").await.success);
+            }
+        })
+        .await;
+
+        assert!(all.is_ok(), "requests hung after the server died");
     }
 }

@@ -5,70 +5,126 @@ use hdrhistogram::Histogram;
 use serde::Serialize;
 use tabled::Tabled;
 
+use super::summary::{histogram_percentile_ms, RunSummary};
+
+/// Version of the JSON report layout produced by [`FinalReport`].
+pub const REPORT_SCHEMA_VERSION: u32 = 2;
+
+/// Latency statistics in milliseconds.
+#[derive(Serialize)]
+pub struct LatencyStats {
+    /// Minimum observed latency.
+    pub min_ms: f64,
+
+    /// Mean observed latency.
+    pub avg_ms: f64,
+
+    /// 50th percentile latency.
+    pub p50_ms: f64,
+
+    /// 95th percentile latency.
+    pub p95_ms: f64,
+
+    /// 99th percentile latency.
+    pub p99_ms: f64,
+
+    /// Maximum observed latency.
+    pub max_ms: f64,
+}
+
+impl LatencyStats {
+    /// Computes the statistics of a latency histogram (microseconds).
+    ///
+    /// An empty histogram (no successful request) yields zeros, because
+    /// JSON cannot represent the `NaN` a mean of nothing would produce.
+    pub fn from_histogram(histogram: &Histogram<u64>) -> Self {
+        if histogram.is_empty() {
+            return Self {
+                min_ms: 0.0,
+                avg_ms: 0.0,
+                p50_ms: 0.0,
+                p95_ms: 0.0,
+                p99_ms: 0.0,
+                max_ms: 0.0,
+            };
+        }
+
+        Self {
+            min_ms: to_ms(histogram.min()),
+            avg_ms: histogram.mean() / 1000.0,
+            p50_ms: to_ms(histogram.value_at_quantile(0.5)),
+            p95_ms: to_ms(histogram.value_at_quantile(0.95)),
+            p99_ms: to_ms(histogram.value_at_quantile(0.99)),
+            max_ms: to_ms(histogram.max()),
+        }
+    }
+}
+
 /// Aggregated results produced by a Cannon load test.
 ///
 /// `FinalReport` contains the measurements collected during the test,
 /// including request counts, latency statistics, throughput, network
 /// traffic, response status codes, errors, and Apdex score.
 ///
-/// The structure derives [`Serialize`] so that the report can also be
-/// exported to formats such as JSON and consumed by the HTML reporter.
-/// It also derives [`Tabled`] for tabular terminal output.
-#[derive(Serialize, Tabled)]
+/// The structure derives [`Serialize`] so that the report can be exported
+/// to JSON and consumed by the HTML reporter.
+///
+/// Latency figures describe **successful** requests only. When the run was
+/// paced (`--rps`) they are measured from the scheduled send time
+/// (`latency_mode` is `open-loop`); `service_time` always holds the plain
+/// request duration without queueing.
+#[derive(Serialize)]
 pub struct FinalReport {
+    /// Version of this report layout.
+    pub schema_version: u32,
+
     /// Target URL or address used by the test.
-    #[tabled(rename = "Target URL")]
     pub target: String,
 
-    /// Total number of requests executed during the measurement phase.
-    #[tabled(rename = "Total")]
-    pub total_requests: u32,
+    /// Number of requests that completed during the measurement phase.
+    pub total_requests: u64,
 
     /// Number of concurrent workers used to generate load.
-    #[tabled(rename = "Workers")]
     pub concurrency: u32,
 
     /// Number of requests that completed successfully.
-    #[tabled(rename = "Success")]
     pub successes: u64,
 
     /// Number of requests that failed.
-    #[tabled(rename = "Failures")]
     pub failures: u64,
 
-    /// Minimum observed latency in milliseconds.
-    pub min_ms: f64,
+    /// Percentage of measured requests that failed.
+    pub error_rate_percent: f64,
 
-    /// Mean observed latency in milliseconds.
-    pub avg_ms: f64,
+    /// Number of responses that did not satisfy the `--expect` assertion.
+    pub assertion_failures: u64,
 
-    /// 50th percentile latency in milliseconds.
-    pub p50_ms: f64,
+    /// How latency was measured: `open-loop` or `closed-loop`.
+    pub latency_mode: String,
 
-    /// 95th percentile latency in milliseconds.
-    pub p95_ms: f64,
+    /// Response-time statistics of successful requests.
+    #[serde(flatten)]
+    pub latency: LatencyStats,
 
-    /// 99th percentile latency in milliseconds.
-    pub p99_ms: f64,
+    /// Service-time statistics of successful requests (no queueing delay).
+    pub service_time: LatencyStats,
 
-    /// Maximum observed latency in milliseconds.
-    pub max_ms: f64,
+    /// Configured request rate, if the load was paced.
+    pub target_rps: Option<u32>,
 
     /// Requests per second actually achieved during the measurement phase.
     pub actual_rps: f64,
 
-    /// Total number of bytes sent to the target.
+    /// Total number of payload bytes sent to the target.
     pub bytes_sent: u64,
 
-    /// Total number of bytes received from the target.
+    /// Total number of payload bytes received from the target.
     pub bytes_received: u64,
 
     /// Distribution of response status codes observed during the test.
-    #[tabled(skip)]
     pub status_codes: HashMap<u16, u64>,
 
     /// Distribution of errors observed during the test.
-    #[tabled(skip)]
     pub errors: HashMap<String, u64>,
 
     /// Total measurement duration in seconds.
@@ -77,9 +133,54 @@ pub struct FinalReport {
     /// Apdex score calculated from the test results.
     pub apdex_score: f64,
 
+    /// Apdex satisfied threshold, in milliseconds.
+    pub apdex_threshold_ms: u64,
+
     /// Configured latency percentiles and their measured values in milliseconds.
-    #[tabled(skip)]
     pub percentiles: HashMap<String, f64>,
+
+    /// Whether the run was stopped before all requests were sent.
+    pub interrupted: bool,
+}
+
+impl FinalReport {
+    /// Builds the report for a finished run.
+    pub fn new(
+        summary: &RunSummary,
+        target: &str,
+        workers: u32,
+        target_rps: Option<u32>,
+        apdex_threshold_ms: u64,
+        percentiles: &[f64],
+    ) -> Self {
+        Self {
+            schema_version: REPORT_SCHEMA_VERSION,
+            target: target.to_string(),
+            total_requests: summary.measured_requests,
+            concurrency: workers,
+            successes: summary.successes,
+            failures: summary.failures,
+            error_rate_percent: summary.error_rate_percent(),
+            assertion_failures: summary.assertion_failures,
+            latency_mode: summary.latency_mode().to_string(),
+            latency: LatencyStats::from_histogram(&summary.histogram),
+            service_time: LatencyStats::from_histogram(&summary.service_histogram),
+            target_rps,
+            actual_rps: summary.actual_rps(),
+            bytes_sent: summary.bytes_sent,
+            bytes_received: summary.bytes_received,
+            status_codes: summary.status_counts.clone(),
+            errors: summary.error_counts.clone(),
+            duration_secs: summary.duration.as_secs_f64(),
+            apdex_score: summary.apdex(apdex_threshold_ms),
+            apdex_threshold_ms,
+            percentiles: percentiles
+                .iter()
+                .map(|&quantile| (percentile_label(quantile), summary.percentile_ms(quantile)))
+                .collect(),
+            interrupted: summary.interrupted,
+        }
+    }
 }
 
 /// A single latency metric formatted for terminal presentation.
@@ -135,51 +236,57 @@ pub fn to_ms(us: u64) -> f64 {
 
 /// Renders a latency histogram as an ASCII distribution in the terminal.
 ///
-/// The histogram is divided into approximately ten linear buckets. Each
-/// bucket displays its upper latency boundary, request count, percentage
-/// of the total observations, and a proportional bar.
+/// Buckets double in width (0.1 ms, 0.2 ms, 0.4 ms, ...), so a few slow
+/// outliers cannot flatten the whole distribution into a single bar. Each
+/// bucket shows its upper boundary, request count, share of the total and a
+/// proportional bar. Empty buckets at either end are omitted.
 ///
 /// Nothing is printed when the histogram contains no observations.
 pub fn render_ascii_histogram(hist: &hdrhistogram::Histogram<u64>) {
-    println!("\n{}", "📊 LATENCY DISTRIBUTION".bold().bright_white());
-
-    let min = hist.min();
-    let max = hist.max();
-
-    let step = (max - min) / 10;
-
-    let step = if step == 0 { 1 } else { step };
-
-    let mut max_count = 0;
-
-    for bucket in hist.iter_linear(step) {
-        if bucket.count_since_last_iteration() > max_count {
-            max_count = bucket.count_since_last_iteration();
-        }
+    if hist.is_empty() {
+        return;
     }
+
+    let mut buckets: Vec<(u64, u64)> = hist
+        .iter_log(100, 2.0)
+        .map(|bucket| {
+            (
+                bucket.value_iterated_to(),
+                bucket.count_since_last_iteration(),
+            )
+        })
+        .collect();
+
+    while buckets.last().is_some_and(|&(_, count)| count == 0) {
+        buckets.pop();
+    }
+
+    let first = buckets
+        .iter()
+        .position(|&(_, count)| count > 0)
+        .unwrap_or(0);
+
+    let max_count = buckets.iter().map(|&(_, count)| count).max().unwrap_or(0);
 
     if max_count == 0 {
         return;
     }
 
-    for bucket in hist.iter_linear(step) {
-        let count = bucket.count_since_last_iteration();
-        let percent = (count as f64 / hist.len() as f64) * 100.0;
+    println!("\n{}", "📊 LATENCY DISTRIBUTION".bold().bright_white());
 
-        let bar_width = (count as f64 / max_count as f64 * 30.0) as usize;
+    for &(upper_bound, count) in &buckets[first..] {
+        let percent = count as f64 / hist.len() as f64 * 100.0;
+
+        let bar_width = (count as f64 / max_count as f64 * 30.0).round() as usize;
         let bar = "█".repeat(bar_width);
 
         println!(
-            "{:>8.2}ms [{:<30}] {:>6} ({:.1}%)",
-            to_ms(bucket.value_iterated_to()),
+            "{:>9.2}ms [{:<30}] {:>8} ({:.1}%)",
+            to_ms(upper_bound),
             bar.cyan(),
             count,
             percent
         );
-
-        if bucket.value_iterated_to() >= max {
-            break;
-        }
     }
 }
 
@@ -214,55 +321,44 @@ pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()
 /// The summary includes:
 ///
 /// - successful and failed requests;
-/// - latency statistics and configured percentiles;
+/// - latency statistics and configured percentiles (successful requests);
 /// - latency distribution;
 /// - HTTP status-code distribution;
-/// - failure details;
-/// - assertion failures;
+/// - failure details and assertion failures;
 /// - network traffic and throughput;
-/// - target and achieved RPS;
-/// - total test duration.
+/// - target and achieved RPS, and the Apdex score.
 ///
 /// `target_rps` is optional because Cannon can also run without a fixed
 /// RPS target. When it is absent, the report displays the measured mean
-/// RPS instead.
-///
-/// # Arguments
-///
-/// * `successes` - Number of successful requests.
-/// * `failures` - Number of failed requests.
-/// * `hist` - Latency histogram collected during measurement.
-/// * `total` - Total measurement duration.
-/// * `target_rps` - Configured target RPS, if constant-rate load is enabled.
-/// * `actual_rps` - RPS actually achieved by the test.
-/// * `status_counts` - Response status-code distribution.
-/// * `error_counts` - Error distribution.
-/// * `assertion_failures` - Number of failed response assertions.
-/// * `bytes_sent` - Total bytes sent to the target.
-/// * `bytes_recv` - Total bytes received from the target.
-/// * `percentiles` - Latency quantiles to display.
-/// * `apdex` - Apdex score (`0.0..=1.0`) computed from the histogram.
-/// * `apdex_t_ms` - Apdex satisfied threshold in milliseconds.
-#[allow(clippy::too_many_arguments)]
+/// RPS instead. `requested` is the number of requests the run was asked to
+/// send, used to describe interrupted runs.
 pub fn print_summary(
-    successes: u64,
-    failures: u64,
-    hist: &Histogram<u64>,
-    total: std::time::Duration,
+    summary: &RunSummary,
+    requested: u32,
     target_rps: Option<u32>,
-    actual_rps: f64,
-    status_counts: std::collections::HashMap<u16, u64>,
-    error_counts: std::collections::HashMap<String, u64>,
-    assertion_failures: u64,
-    bytes_sent: u64,
-    bytes_recv: u64,
     percentiles: &[f64],
-    apdex: f64,
-    apdex_t_ms: u64,
+    apdex_threshold_ms: u64,
 ) {
+    let successes = summary.successes;
+    let failures = summary.failures;
+    let hist = &summary.histogram;
+
     println!("\n{}", "--- 🏁 CANNON'S REPORT ---".bold().underline());
 
+    if summary.interrupted {
+        println!(
+            "{}",
+            format!(
+                "⚠️ Run interrupted: partial results ({} of {} requests completed)",
+                summary.measured_requests, requested
+            )
+            .yellow()
+            .bold()
+        );
+    }
+
     let mut metrics = Vec::new();
+
     if successes > 0 {
         let to_ms_str = |v| format!("{:.2}ms", to_ms(v));
 
@@ -273,14 +369,16 @@ pub fn print_summary(
 
         metrics.push(LatencyMetrics {
             metric: "Mean".to_string(),
-            value: to_ms_str(hist.mean() as u64),
+            value: format!("{:.2}ms", hist.mean() / 1000.0),
         });
 
         for &p in percentiles {
-            let p_label = if percentile_label(p) == "p50" {
+            let label = percentile_label(p);
+
+            let p_label = if label == "p50" {
                 "p50 (Median)".to_string()
             } else {
-                percentile_label(p)
+                label
             };
 
             metrics.push(LatencyMetrics {
@@ -296,38 +394,44 @@ pub fn print_summary(
 
         render_ascii_histogram(hist);
         println!("\n{}", "-------------------------".bright_black());
+
+        println!(
+            "{}",
+            tabled::Table::new(metrics).with(tabled::settings::Style::modern())
+        );
+
+        print_latency_basis(summary);
+    } else {
+        println!(
+            "{}",
+            "No request succeeded: latency statistics are not available.".yellow()
+        );
     }
 
-    let metrics_is_empty = metrics.is_empty();
-    let table = tabled::Table::new(metrics)
-        .with(tabled::settings::Style::modern())
-        .to_string();
-
-    if !metrics_is_empty {
-        println!("{}", table);
-    }
     println!(
-        "{} {} | {} {} | {} {:?}",
+        "{} {} | {} {} ({:.2}%) | {} {:?}",
         "✅ Successes:".green().bold(),
         successes.to_string().bright_white(),
         "❌ Failures:".red().bold(),
         failures.to_string().bright_white(),
+        summary.error_rate_percent(),
         "⏱️ Total Time:".cyan().bold(),
-        total
+        summary.duration
     );
 
     println!("\n{}", "-------------------------".bright_black());
 
-    if !status_counts.is_empty() {
+    if !summary.status_counts.is_empty() {
         println!("\n{}", "📊 STATUS CODES DISTRIBUTION".bold().bright_white());
 
-        let mut codes: Vec<_> = status_counts.into_iter().collect();
+        let mut codes: Vec<_> = summary.status_counts.iter().collect();
 
-        codes.sort_by_key(|a| a.0);
+        codes.sort_by_key(|entry| *entry.0);
 
         for (code, count) in codes {
             let color_code = match code {
                 200..=299 => code.to_string().green(),
+                300..=399 => code.to_string().cyan(),
                 400..=499 => code.to_string().yellow(),
                 _ => code.to_string().red(),
             };
@@ -336,26 +440,12 @@ pub fn print_summary(
         }
     }
 
-    if !error_counts.is_empty() {
-        println!("\n{}", "❌ FAILURES DETAILS".bold().red());
+    print_failure_details(summary);
 
-        let mut sorted_errors: Vec<_> = error_counts.into_iter().collect();
-        sorted_errors.sort_by_key(|item| std::cmp::Reverse(item.1));
-        for (err, count) in sorted_errors {
-            let perc = (count as f64 / failures.max(1) as f64) * 100.0;
-            println!(
-                "  {:<30} {:>6} ({:>4.1}%)",
-                err.yellow(),
-                count.to_string().bright_white(),
-                perc
-            );
-        }
-    }
-
-    if assertion_failures > 0 {
+    if summary.assertion_failures > 0 {
         println!(
             "❌ Assertion Failures: {}",
-            assertion_failures.to_string().red()
+            summary.assertion_failures.to_string().red()
         );
     }
 
@@ -363,10 +453,10 @@ pub fn print_summary(
 
     println!("\n{}", "📈 EFFICIENCY AND NETWORK".bold().bright_white());
 
-    let sent_mb = bytes_sent as f64 / 1_048_576.0;
-    let recv_mb = bytes_recv as f64 / 1_048_576.0;
+    let sent_mb = summary.bytes_sent as f64 / 1_048_576.0;
+    let recv_mb = summary.bytes_received as f64 / 1_048_576.0;
 
-    let total_secs = total.as_secs_f64();
+    let total_secs = summary.duration.as_secs_f64();
 
     let (throughput_sent, throughput_recv) = if total_secs > 0.0 {
         (sent_mb / total_secs, recv_mb / total_secs)
@@ -374,22 +464,21 @@ pub fn print_summary(
         (0.0, 0.0)
     };
 
-    let sent_mb_str = format!("{:.2}", sent_mb).magenta();
-    let throughput_sent_str = format!("{:.2}", throughput_sent).yellow();
-    let recv_mb_str = format!("{:.2}", recv_mb).cyan();
-    let throughput_recv_str = format!("{:.2}", throughput_recv).yellow();
-
     println!(
         "📤 Sent:         {} MB total ({} MB/s)",
-        sent_mb_str, throughput_sent_str
+        format!("{:.2}", sent_mb).magenta(),
+        format!("{:.2}", throughput_sent).yellow()
     );
     println!(
         "📥 Received:     {} MB total ({} MB/s)",
-        recv_mb_str, throughput_recv_str
+        format!("{:.2}", recv_mb).cyan(),
+        format!("{:.2}", throughput_recv).yellow()
     );
     println!("\n{}", "-------------------------".bright_black());
 
     println!("\n{}", "📈 CANNON EFFICIENCY".bold().bright_white());
+
+    let actual_rps = summary.actual_rps();
 
     if let Some(target) = target_rps {
         let efficiency = (actual_rps / target as f64) * 100.0;
@@ -405,12 +494,83 @@ pub fn print_summary(
 
     println!(
         "Apdex (T={}ms): {}",
-        apdex_t_ms,
-        format!("{:.3}", apdex).yellow()
+        apdex_threshold_ms,
+        format!("{:.3}", summary.apdex(apdex_threshold_ms)).yellow()
     );
 
     println!("\n{}", "-------------------------".bright_black());
-    println!("Test finished in {}s", total.as_secs());
+    println!("Test finished in {:.1}s", total_secs);
+}
+
+/// Explains how the latency figures above were measured.
+fn print_latency_basis(summary: &RunSummary) {
+    if summary.open_loop {
+        let service = &summary.service_histogram;
+
+        println!(
+            "{}",
+            "Latency is measured from each request's scheduled send time (open-loop), \
+             so queueing delay is included."
+                .bright_black()
+        );
+        println!(
+            "{}",
+            format!(
+                "Service time only (excluding queueing): p50 {:.2}ms | p99 {:.2}ms | max {:.2}ms",
+                histogram_percentile_ms(service, 0.5),
+                histogram_percentile_ms(service, 0.99),
+                to_ms(service.max())
+            )
+            .bright_black()
+        );
+    } else {
+        println!(
+            "{}",
+            "Latency is the service time of each request (closed-loop). Use --rps for \
+             constant-rate load measured from the scheduled send time."
+                .bright_black()
+        );
+    }
+}
+
+fn print_failure_details(summary: &RunSummary) {
+    let failures = summary.failures;
+
+    if failures == 0 {
+        return;
+    }
+
+    println!("\n{}", "❌ FAILURES DETAILS".bold().red());
+
+    let mut sorted_errors: Vec<_> = summary.error_counts.iter().collect();
+
+    sorted_errors.sort_by_key(|item| std::cmp::Reverse(*item.1));
+
+    let explained: u64 = summary.error_counts.values().sum();
+
+    for (err, count) in sorted_errors {
+        let perc = (*count as f64 / failures as f64) * 100.0;
+
+        println!(
+            "  {:<44} {:>8} ({:>5.1}%)",
+            err.yellow(),
+            count.to_string().bright_white(),
+            perc
+        );
+    }
+
+    let http_errors = failures.saturating_sub(explained);
+
+    if http_errors > 0 {
+        let perc = (http_errors as f64 / failures as f64) * 100.0;
+
+        println!(
+            "  {:<44} {:>8} ({:>5.1}%)",
+            "HTTP error status (see above)".yellow(),
+            http_errors.to_string().bright_white(),
+            perc
+        );
+    }
 }
 
 /// Prints Cannon's startup banner to the terminal.

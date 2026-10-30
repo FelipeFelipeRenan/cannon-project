@@ -165,6 +165,25 @@ pub struct Args {
     )]
     pub connect_timeout: u64,
 
+    /// TCP mode: number of bytes in each response (0 = do not wait for one).
+    ///
+    /// TCP has no message boundaries, so Cannon must know how much to read
+    /// after every write. The default (1) matches the legacy behaviour; set
+    /// it to the real response size to measure the full round trip.
+    #[arg(
+        long,
+        value_name = "BYTES",
+        conflicts_with = "tcp_read_until",
+        help_heading = "Request"
+    )]
+    pub tcp_read_bytes: Option<usize>,
+
+    /// TCP mode: read each response until it ends with this delimiter.
+    ///
+    /// Supports the escapes \r, \n, \t and \\ (example: '\r\n').
+    #[arg(long, value_name = "DELIMITER", help_heading = "Request")]
+    pub tcp_read_until: Option<String>,
+
     /// HTTP User-Agent header.
     #[arg(
         short = 'A',
@@ -258,7 +277,7 @@ pub struct Args {
     )]
     pub compare_baseline: Option<String>,
 
-    /// Maximum allowed latency regression percentage.
+    /// Maximum allowed p99 latency regression percentage.
     #[arg(
         long,
         value_name = "PERCENT",
@@ -266,6 +285,14 @@ pub struct Args {
         help_heading = "Baselines"
     )]
     pub tolerance: f64,
+
+    /// Fail (exit status 2) when more than this percentage of requests fail.
+    ///
+    /// With `--compare-baseline` and no explicit value, the error rate saved
+    /// in the baseline is the limit, so a run can never be less reliable
+    /// than the baseline.
+    #[arg(long, value_name = "PERCENT", help_heading = "Baselines")]
+    pub max_error_rate: Option<f64>,
 
     // ─────────────────────────────────────────────────────────────────────
     // Runtime
@@ -328,12 +355,28 @@ impl Args {
             return Err("connect_timeout must be greater than 0".to_string());
         }
 
+        if let Some(delimiter) = &self.tcp_read_until {
+            if self.tcp_read_bytes.is_some() {
+                return Err("tcp_read_bytes and tcp_read_until cannot be used together".to_string());
+            }
+
+            if unescape_delimiter(delimiter).is_empty() {
+                return Err("tcp-read-until must not be empty".to_string());
+            }
+        }
+
         if self.apdex_t == 0 {
             return Err("apdex_t must be greater than 0".to_string());
         }
 
-        if self.tolerance < 0.0 {
+        if self.tolerance.is_nan() || self.tolerance < 0.0 {
             return Err("tolerance must be greater than or equal to 0".to_string());
+        }
+
+        if let Some(rate) = self.max_error_rate {
+            if !(0.0..=100.0).contains(&rate) {
+                return Err("max-error-rate must be between 0 and 100".to_string());
+            }
         }
 
         if reqwest::Method::from_bytes(self.method.as_bytes()).is_err() {
@@ -436,8 +479,17 @@ pub struct FileConfig {
     /// File containing the baseline used for comparison.
     pub compare_baseline: Option<String>,
 
-    /// Maximum allowed latency regression percentage.
+    /// Maximum allowed p99 latency regression percentage.
     pub tolerance: Option<f64>,
+
+    /// Maximum allowed percentage of failed requests.
+    pub max_error_rate: Option<f64>,
+
+    /// TCP mode: bytes in each response.
+    pub tcp_read_bytes: Option<usize>,
+
+    /// TCP mode: response delimiter.
+    pub tcp_read_until: Option<String>,
 
     /// Pin Tokio worker threads to CPU cores.
     pub pin_threads: Option<bool>,
@@ -520,6 +572,24 @@ mod tests {
         assert_eq!(args.count, 100);
         assert_eq!(args.workers, 10, "O default de workers deve ser 10");
         assert_eq!(args.method, "GET", "O default do método deve ser GET");
+    }
+
+    #[test]
+    fn max_error_rate_must_be_a_percentage() {
+        let parse = |value: &str| {
+            let flag = format!("--max-error-rate={value}");
+
+            Args::try_parse_from(["cannon", "-u", "http://x.test", flag.as_str()])
+                .unwrap()
+                .validate()
+        };
+
+        assert!(parse("0").is_ok());
+        assert!(parse("2.5").is_ok());
+        assert!(parse("100").is_ok());
+        assert!(parse("100.1").is_err());
+        assert!(parse("-1").is_err());
+        assert!(parse("NaN").is_err());
     }
 
     #[test]
@@ -725,5 +795,51 @@ mod tests {
         let error = parse_ramp_up_duration("banana").unwrap_err();
 
         assert!(error.contains("invalid ramp-up duration"));
+    }
+}
+
+/// Converts the escapes accepted by `--tcp-read-until` into raw bytes.
+pub fn unescape_delimiter(raw: &str) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut chars = raw.chars();
+
+    while let Some(character) = chars.next() {
+        if character != '\\' {
+            let mut buffer = [0u8; 4];
+
+            bytes.extend_from_slice(character.encode_utf8(&mut buffer).as_bytes());
+
+            continue;
+        }
+
+        match chars.next() {
+            Some('r') => bytes.push(b'\r'),
+            Some('n') => bytes.push(b'\n'),
+            Some('t') => bytes.push(b'\t'),
+            Some('\\') => bytes.push(b'\\'),
+            Some(other) => {
+                bytes.push(b'\\');
+
+                let mut buffer = [0u8; 4];
+
+                bytes.extend_from_slice(other.encode_utf8(&mut buffer).as_bytes());
+            }
+            None => bytes.push(b'\\'),
+        }
+    }
+
+    bytes
+}
+
+#[cfg(test)]
+mod tcp_framing_tests {
+    use super::unescape_delimiter;
+
+    #[test]
+    fn delimiter_escapes_are_decoded() {
+        assert_eq!(unescape_delimiter("\\r\\n"), b"\r\n");
+        assert_eq!(unescape_delimiter("\\\\"), b"\\");
+        assert_eq!(unescape_delimiter("END"), b"END");
+        assert_eq!(unescape_delimiter("\\x"), b"\\x");
     }
 }
