@@ -5,10 +5,13 @@ All notable changes to Cannon will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.2.0] - Unreleased
 
 ### 🐛 Fixed
 
+- **Opaque HTTP errors:** timeouts, DNS failures, refused connections, TLS errors and exhausted file descriptors were all reported as "error sending request". They now appear as `Timeout`, `DNS Error`, `TLS Error`, `Connection Refused`, `Connection Reset`, `File Descriptor Limit`, `Invalid Request`, ... with the underlying cause.
+- **Invalid input:** `--rps 4000000000` panicked and `-w 4000000000` hung. Both are now bounded (`rps` ≤ 10 000 000, `workers` ≤ 100 000), and malformed `-H` values (no colon, invalid name/value) are rejected up front instead of silently failing every request.
+- **Redirects:** they were followed silently, so each reported request could cost several hits on the server. Redirects are no longer followed; the 3xx response is reported as is.
 - **Coordinated omission:** with `--rps`, latency is now measured from the *scheduled* send time, so a server stall is no longer hidden by workers waiting to send. The report shows the latency mode (`open-loop`/`closed-loop`) and the raw service time separately.
 - **TCP response framing:** Cannon used to read exactly one byte, so multi-byte replies left data in the socket and corrupted every later latency. Use `--tcp-read-bytes` / `--tcp-read-until`; a mismatch is reported as a `Response Framing` error.
 - **TCP hang:** when the server died, the connection pool shrank until requests waited forever (and Ctrl-C did not help). Broken connections are now replaced lazily, so requests fail fast.
@@ -23,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🚀 Added
 
+- On Unix, Cannon raises the open-file soft limit to the hard limit at startup and warns when `--workers` still would not fit.
 - `--tcp-read-bytes`, `--tcp-read-until` (CLI and YAML) and `Target::new_tcp_with_options` / `TcpRead`.
 - `--max-error-rate` (CLI and YAML) and error-rate data in baseline files (older baselines still load).
 - Distinct exit codes: `2` gate failure, `130` SIGINT, `143` SIGTERM.
@@ -34,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🔄 Changed
 
+- Removed the unused `rand`, `uuid` and `async-trait` dependencies (`uuid` was what raised the minimum Rust version).
 - Latency histograms/percentiles now contain **successful requests only**; failures appear in counters and the error breakdown. Apdex counts failed requests as frustrated.
 - The CSV export has an extra column with the service time; baseline files record `schema_version`, `error_rate_percent` and `latency_mode`.
 - Interrupting with Ctrl-C now exits with 130 instead of 0.

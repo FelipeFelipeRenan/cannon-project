@@ -406,7 +406,7 @@ impl Target {
                             assertion_success: assert_ok,
                         }
                     }
-                    Err(e) => TargetResult::fail(start.elapsed(), format!("Network Error: {}", e)),
+                    Err(e) => TargetResult::fail(start.elapsed(), classify_http_error(&e)),
                 }
             }
 
@@ -470,6 +470,84 @@ impl Target {
             }
         }
     }
+}
+
+/// Turns a `reqwest` error into a short, actionable category.
+///
+/// `reqwest` reports timeouts, DNS failures, refused connections, TLS errors
+/// and exhausted file descriptors all as "error sending request", which hides
+/// the real cause. The categories are stable strings so they aggregate well
+/// in the error breakdown.
+fn classify_http_error(error: &reqwest::Error) -> String {
+    let mut chain = Vec::new();
+    let mut os_error = None;
+    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(error);
+
+    while let Some(current) = source {
+        chain.push(current.to_string());
+
+        if let Some(io) = current.downcast_ref::<std::io::Error>() {
+            os_error = os_error.or(io.raw_os_error());
+        }
+
+        source = current.source();
+    }
+
+    describe_http_error(
+        error.is_timeout(),
+        error.is_builder(),
+        error.is_redirect(),
+        error.is_connect(),
+        os_error,
+        &chain.join(": "),
+    )
+}
+
+fn describe_http_error(
+    timeout: bool,
+    builder: bool,
+    redirect: bool,
+    connect: bool,
+    os_error: Option<i32>,
+    chain: &str,
+) -> String {
+    let lower = chain.to_lowercase();
+
+    // EMFILE (24) / ENFILE (23) on Unix: the process ran out of descriptors.
+    if matches!(os_error, Some(23 | 24)) || lower.contains("too many open files") {
+        return "File Descriptor Limit: too many open files (raise `ulimit -n` or use fewer workers)"
+            .to_string();
+    }
+
+    let category = if timeout {
+        "Timeout"
+    } else if builder {
+        "Invalid Request"
+    } else if redirect {
+        "Redirect Error"
+    } else if lower.contains("dns error")
+        || lower.contains("failed to lookup")
+        || lower.contains("name or service not known")
+        || lower.contains("no such host")
+    {
+        "DNS Error"
+    } else if lower.contains("certificate")
+        || lower.contains("tls")
+        || lower.contains("ssl")
+        || lower.contains("handshake")
+    {
+        "TLS Error"
+    } else if lower.contains("connection refused") {
+        "Connection Refused"
+    } else if lower.contains("connection reset") {
+        "Connection Reset"
+    } else if connect {
+        "Connect Error"
+    } else {
+        "Network Error"
+    };
+
+    format!("{category}: {chain}")
 }
 
 #[cfg(test)]
@@ -633,7 +711,7 @@ mod tests {
             .error
             .as_deref()
             .unwrap()
-            .starts_with("Network Error:"));
+            .starts_with("Connection Refused:"));
     }
 
     #[tokio::test]
@@ -893,5 +971,42 @@ mod tests {
         .await;
 
         assert!(all.is_ok(), "requests hung after the server died");
+    }
+
+    #[test]
+    fn http_errors_are_classified_by_cause() {
+        let describe = |timeout, builder, connect, os, text: &str| {
+            describe_http_error(timeout, builder, false, connect, os, text)
+        };
+
+        assert!(describe(true, false, false, None, "x").starts_with("Timeout:"));
+        assert!(describe(false, true, false, None, "builder error").starts_with("Invalid Request"));
+        assert!(describe(
+            false,
+            false,
+            true,
+            None,
+            "dns error: failed to lookup address"
+        )
+        .starts_with("DNS Error"));
+        assert!(describe(
+            false,
+            false,
+            true,
+            None,
+            "invalid peer certificate: UnknownIssuer"
+        )
+        .starts_with("TLS Error"));
+        assert!(describe(
+            false,
+            false,
+            true,
+            None,
+            "tcp connect error: Connection refused (os error 111)"
+        )
+        .starts_with("Connection Refused"));
+        assert!(describe(false, false, true, Some(24), "tcp connect error")
+            .starts_with("File Descriptor Limit"));
+        assert!(describe(false, false, false, None, "boom").starts_with("Network Error"));
     }
 }

@@ -1053,3 +1053,53 @@ fn failed_requests_do_not_pollute_latency_statistics() {
 
     let _ = std::fs::remove_file(report);
 }
+
+#[test]
+fn connection_refused_is_reported_with_its_real_cause() {
+    let report = temp_path("refused.json");
+
+    let _ = run_cannon(&[
+        "-u",
+        &unused_port_url(),
+        "-c",
+        "3",
+        "-w",
+        "1",
+        "-o",
+        report.to_str().unwrap(),
+    ]);
+
+    let json = read_json(&report);
+
+    assert!(json["errors"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .any(|key| key.starts_with("Connection Refused")));
+
+    let _ = std::fs::remove_file(report);
+}
+
+#[test]
+fn absurd_or_malformed_inputs_are_rejected_instead_of_panicking() {
+    let url = unused_port_url();
+
+    for extra in [
+        vec!["--rps", "4000000000"],
+        vec!["-w", "4000000000"],
+        vec!["-H", "nocolon"],
+        vec!["-H", "Bad Header: x"],
+    ] {
+        let mut arguments = vec!["-u", url.as_str()];
+        arguments.extend(extra.iter().copied());
+
+        let output = run_cannon(&arguments);
+
+        assert_eq!(output.status.code(), Some(1), "{extra:?}");
+        assert!(
+            stderr(&output).contains("invalid"),
+            "{extra:?}: {}",
+            stderr(&output)
+        );
+    }
+}

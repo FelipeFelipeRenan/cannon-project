@@ -327,8 +327,20 @@ impl Args {
             return Err("workers must be greater than 0".to_string());
         }
 
+        if self.workers > MAX_WORKERS {
+            return Err(format!("workers must be at most {MAX_WORKERS}"));
+        }
+
         if self.rps == Some(0) {
             return Err("rps must be greater than 0".to_string());
+        }
+
+        if self.rps.is_some_and(|rps| rps > MAX_RPS) {
+            return Err(format!("rps must be at most {MAX_RPS}"));
+        }
+
+        for header in &self.headers {
+            validate_header(header)?;
         }
 
         if let Some(ramp_up) = &self.ramp_up {
@@ -841,5 +853,40 @@ mod tcp_framing_tests {
         assert_eq!(unescape_delimiter("\\\\"), b"\\");
         assert_eq!(unescape_delimiter("END"), b"END");
         assert_eq!(unescape_delimiter("\\x"), b"\\x");
+    }
+}
+
+/// Largest accepted number of concurrent workers.
+pub const MAX_WORKERS: u32 = 100_000;
+
+/// Largest accepted target request rate.
+pub const MAX_RPS: u32 = 10_000_000;
+
+/// Checks that a `-H` value is a well-formed `Name: value` header.
+fn validate_header(header: &str) -> Result<(), String> {
+    let (name, value) = header
+        .split_once(':')
+        .ok_or_else(|| format!("invalid header '{header}': expected the format 'Name: value'"))?;
+
+    reqwest::header::HeaderName::from_bytes(name.trim().as_bytes())
+        .map_err(|_| format!("invalid header name '{}' in '{header}'", name.trim()))?;
+
+    reqwest::header::HeaderValue::from_str(value.trim())
+        .map_err(|_| format!("invalid header value in '{header}'"))?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod validation_tests {
+    use super::validate_header;
+
+    #[test]
+    fn malformed_headers_are_rejected() {
+        assert!(validate_header("Accept: */*").is_ok());
+        assert!(validate_header("X-Empty:").is_ok());
+        assert!(validate_header("nocolon").is_err());
+        assert!(validate_header("Bad Header: x").is_err());
+        assert!(validate_header("A: bad\nvalue").is_err());
     }
 }

@@ -16,6 +16,10 @@ pub fn build_optimized_client(args: &Args) -> Result<Client, reqwest::Error> {
         .tcp_keepalive(Duration::from_secs(60))
         .pool_max_idle_per_host(args.workers as usize)
         .pool_idle_timeout(Some(Duration::from_secs(90)))
+        // Redirects would silently multiply the traffic (each one is another
+        // request) while being reported as a single response, so they are
+        // surfaced as the 3xx responses they are.
+        .redirect(reqwest::redirect::Policy::none())
         .user_agent(&args.user_agent)
         .connect_timeout(Duration::from_millis(args.connect_timeout))
         .timeout(Duration::from_millis(args.timeout));
