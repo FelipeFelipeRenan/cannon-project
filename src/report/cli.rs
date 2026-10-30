@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use colored::Colorize;
 use hdrhistogram::Histogram;
@@ -272,7 +273,7 @@ pub fn render_ascii_histogram(hist: &hdrhistogram::Histogram<u64>) {
         return;
     }
 
-    println!("\n{}", "📊 LATENCY DISTRIBUTION".bold().bright_white());
+    println!("\n{}", "Distribution".bold());
 
     for &(upper_bound, count) in &buckets[first..] {
         let percent = count as f64 / hist.len() as f64 * 100.0;
@@ -343,13 +344,13 @@ pub fn print_summary(
     let failures = summary.failures;
     let hist = &summary.histogram;
 
-    println!("\n{}", "--- 🏁 CANNON'S REPORT ---".bold().underline());
+    println!("\n{}", "━━━ 🏁 CANNON'S REPORT ━━━".bold().bright_white());
 
     if summary.interrupted {
         println!(
             "{}",
             format!(
-                "⚠️ Run interrupted: partial results ({} of {} requests completed)",
+                "⚠️  Run interrupted: partial results ({} of {} requests completed)",
                 summary.measured_requests, requested
             )
             .yellow()
@@ -357,32 +358,51 @@ pub fn print_summary(
         );
     }
 
-    let mut metrics = Vec::new();
+    // One-line verdict first: it is what people look for.
+    let failure_text = format!(
+        "❌ Failures: {} ({:.2}%)",
+        failures,
+        summary.error_rate_percent()
+    );
+
+    println!(
+        "\n{}   {}   {}",
+        format!("✅ Successes: {successes}").green().bold(),
+        if failures == 0 {
+            failure_text.bright_black().bold()
+        } else {
+            failure_text.red().bold()
+        },
+        format!("⏱️  Duration: {}", format_duration(summary.duration))
+            .cyan()
+            .bold()
+    );
+
+    print_section("LATENCY");
 
     if successes > 0 {
         let to_ms_str = |v| format!("{:.2}ms", to_ms(v));
 
-        metrics.push(LatencyMetrics {
-            metric: "Min".to_string(),
-            value: to_ms_str(hist.min()),
-        });
-
-        metrics.push(LatencyMetrics {
-            metric: "Mean".to_string(),
-            value: format!("{:.2}ms", hist.mean() / 1000.0),
-        });
+        let mut metrics = vec![
+            LatencyMetrics {
+                metric: "Min".to_string(),
+                value: to_ms_str(hist.min()),
+            },
+            LatencyMetrics {
+                metric: "Mean".to_string(),
+                value: format!("{:.2}ms", hist.mean() / 1000.0),
+            },
+        ];
 
         for &p in percentiles {
             let label = percentile_label(p);
 
-            let p_label = if label == "p50" {
-                "p50 (Median)".to_string()
-            } else {
-                label
-            };
-
             metrics.push(LatencyMetrics {
-                metric: p_label,
+                metric: if label == "p50" {
+                    "p50 (Median)".to_string()
+                } else {
+                    label
+                },
                 value: to_ms_str(hist.value_at_quantile(p)),
             });
         }
@@ -392,15 +412,14 @@ pub fn print_summary(
             value: to_ms_str(hist.max()),
         });
 
-        render_ascii_histogram(hist);
-        println!("\n{}", "-------------------------".bright_black());
-
         println!(
             "{}",
-            tabled::Table::new(metrics).with(tabled::settings::Style::modern())
+            tabled::Table::new(metrics).with(tabled::settings::Style::rounded())
         );
 
         print_latency_basis(summary);
+
+        render_ascii_histogram(hist);
     } else {
         println!(
             "{}",
@@ -408,35 +427,35 @@ pub fn print_summary(
         );
     }
 
-    println!(
-        "{} {} | {} {} ({:.2}%) | {} {:?}",
-        "✅ Successes:".green().bold(),
-        successes.to_string().bright_white(),
-        "❌ Failures:".red().bold(),
-        failures.to_string().bright_white(),
-        summary.error_rate_percent(),
-        "⏱️ Total Time:".cyan().bold(),
-        summary.duration
-    );
-
-    println!("\n{}", "-------------------------".bright_black());
-
     if !summary.status_counts.is_empty() {
-        println!("\n{}", "📊 STATUS CODES DISTRIBUTION".bold().bright_white());
+        print_section("STATUS CODES");
 
         let mut codes: Vec<_> = summary.status_counts.iter().collect();
 
         codes.sort_by_key(|entry| *entry.0);
 
+        let total: u64 = summary.status_counts.values().sum();
+
         for (code, count) in codes {
-            let color_code = match code {
-                200..=299 => code.to_string().green(),
-                300..=399 => code.to_string().cyan(),
-                400..=499 => code.to_string().yellow(),
-                _ => code.to_string().red(),
+            let label = format!("HTTP {code}");
+
+            let label = match code {
+                200..=299 => label.green(),
+                300..=399 => label.cyan(),
+                400..=499 => label.yellow(),
+                _ => label.red(),
             };
 
-            println!("  HTTP {}: {}", color_code, count);
+            let share = *count as f64 / total.max(1) as f64;
+            let bar = "█".repeat((share * 20.0).round() as usize);
+
+            println!(
+                "  {:<18} {:>10}  {:<20} {:>5.1}%",
+                label,
+                count,
+                bar.bright_black(),
+                share * 100.0
+            );
         }
     }
 
@@ -444,62 +463,127 @@ pub fn print_summary(
 
     if summary.assertion_failures > 0 {
         println!(
-            "❌ Assertion Failures: {}",
+            "\n  ❌ Assertion Failures: {}",
             summary.assertion_failures.to_string().red()
         );
     }
 
-    println!("\n{}", "-------------------------".bright_black());
-
-    println!("\n{}", "📈 EFFICIENCY AND NETWORK".bold().bright_white());
-
-    let sent_mb = summary.bytes_sent as f64 / 1_048_576.0;
-    let recv_mb = summary.bytes_received as f64 / 1_048_576.0;
+    print_section("THROUGHPUT");
 
     let total_secs = summary.duration.as_secs_f64();
-
-    let (throughput_sent, throughput_recv) = if total_secs > 0.0 {
-        (sent_mb / total_secs, recv_mb / total_secs)
-    } else {
-        (0.0, 0.0)
-    };
-
-    println!(
-        "📤 Sent:         {} MB total ({} MB/s)",
-        format!("{:.2}", sent_mb).magenta(),
-        format!("{:.2}", throughput_sent).yellow()
-    );
-    println!(
-        "📥 Received:     {} MB total ({} MB/s)",
-        format!("{:.2}", recv_mb).cyan(),
-        format!("{:.2}", throughput_recv).yellow()
-    );
-    println!("\n{}", "-------------------------".bright_black());
-
-    println!("\n{}", "📈 CANNON EFFICIENCY".bold().bright_white());
-
     let actual_rps = summary.actual_rps();
 
     if let Some(target) = target_rps {
-        let efficiency = (actual_rps / target as f64) * 100.0;
-        let rps_str = format!("{:.2}", actual_rps).yellow();
-        println!("Target RPS:      {}", target.to_string().cyan());
-        println!("Actual RPS:      {} ({:.1}%)", rps_str, efficiency);
-    } else {
-        println!(
-            "Mean RPS:     {} req/s",
-            format!("{:.2}", actual_rps).yellow()
+        let efficiency = actual_rps / f64::from(target.max(1)) * 100.0;
+
+        print_row("Target RPS", target.to_string().cyan());
+        print_row(
+            "Actual RPS",
+            format!("{actual_rps:.2} ({efficiency:.1}% of target)").yellow(),
         );
+    } else {
+        print_row("Requests/sec", format!("{actual_rps:.2}").yellow());
     }
 
-    println!(
-        "Apdex (T={}ms): {}",
-        apdex_threshold_ms,
-        format!("{:.3}", summary.apdex(apdex_threshold_ms)).yellow()
+    let per_second = |bytes: u64| {
+        if total_secs > 0.0 {
+            bytes as f64 / total_secs
+        } else {
+            0.0
+        }
+    };
+
+    print_row(
+        "📤 Sent",
+        format!(
+            "{} ({}/s)",
+            format_bytes(summary.bytes_sent as f64),
+            format_bytes(per_second(summary.bytes_sent))
+        )
+        .magenta(),
+    );
+    print_row(
+        "📥 Received",
+        format!(
+            "{} ({}/s)",
+            format_bytes(summary.bytes_received as f64),
+            format_bytes(per_second(summary.bytes_received))
+        )
+        .cyan(),
     );
 
-    println!("\n{}", "-------------------------".bright_black());
-    println!("Test finished in {:.1}s", total_secs);
+    let apdex = summary.apdex(apdex_threshold_ms);
+
+    print_row(
+        &format!("Apdex (T={apdex_threshold_ms}ms)"),
+        format!("{apdex:.3} ({})", apdex_rating(apdex)).yellow(),
+    );
+
+    println!(
+        "\n{}",
+        format!("Finished in {}", format_duration(summary.duration)).bright_black()
+    );
+}
+
+fn print_section(title: &str) {
+    println!(
+        "\n{} {}",
+        format!("▌ {title}").bold().bright_white(),
+        "─"
+            .repeat(46usize.saturating_sub(title.len()))
+            .bright_black()
+    );
+}
+
+fn print_row(label: &str, value: impl std::fmt::Display) {
+    println!("  {:<18} {}", label, value);
+}
+
+/// Formats a duration compactly (`850ms`, `12.3s`, `2m05s`).
+fn format_duration(duration: Duration) -> String {
+    let seconds = duration.as_secs_f64();
+
+    if seconds < 1.0 {
+        format!("{}ms", duration.as_millis())
+    } else if seconds < 60.0 {
+        format!("{seconds:.1}s")
+    } else {
+        format!(
+            "{}m{:02}s",
+            (seconds / 60.0) as u64,
+            (seconds % 60.0) as u64
+        )
+    }
+}
+
+/// Formats a byte count with a binary unit.
+fn format_bytes(bytes: f64) -> String {
+    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
+
+    let mut value = bytes;
+    let mut unit = 0;
+
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+
+    if unit == 0 {
+        format!("{value:.0} B")
+    } else {
+        format!("{value:.2} {}", UNITS[unit])
+    }
+}
+
+/// Standard Apdex quality bands.
+fn apdex_rating(score: f64) -> &'static str {
+    match score {
+        s if s >= 0.94 => "excellent",
+        s if s >= 0.85 => "good",
+        s if s >= 0.70 => "fair",
+        s if s >= 0.50 => "poor",
+        _ => "unacceptable",
+    }
 }
 
 /// Explains how the latency figures above were measured.
@@ -540,7 +624,7 @@ fn print_failure_details(summary: &RunSummary) {
         return;
     }
 
-    println!("\n{}", "❌ FAILURES DETAILS".bold().red());
+    print_section("FAILURES");
 
     let mut sorted_errors: Vec<_> = summary.error_counts.iter().collect();
 
@@ -552,7 +636,7 @@ fn print_failure_details(summary: &RunSummary) {
         let perc = (*count as f64 / failures as f64) * 100.0;
 
         println!(
-            "  {:<44} {:>8} ({:>5.1}%)",
+            "  {:<52} {:>8} ({:>5.1}%)",
             err.yellow(),
             count.to_string().bright_white(),
             perc
@@ -565,7 +649,7 @@ fn print_failure_details(summary: &RunSummary) {
         let perc = (http_errors as f64 / failures as f64) * 100.0;
 
         println!(
-            "  {:<44} {:>8} ({:>5.1}%)",
+            "  {:<52} {:>8} ({:>5.1}%)",
             "HTTP error status (see above)".yellow(),
             http_errors.to_string().bright_white(),
             perc
@@ -597,6 +681,17 @@ pub fn print_banner() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn durations_and_sizes_are_human_readable() {
+        assert_eq!(format_duration(Duration::from_millis(850)), "850ms");
+        assert_eq!(format_duration(Duration::from_millis(12_340)), "12.3s");
+        assert_eq!(format_duration(Duration::from_secs(125)), "2m05s");
+        assert_eq!(format_bytes(512.0), "512 B");
+        assert_eq!(format_bytes(1_572_864.0), "1.50 MB");
+        assert_eq!(apdex_rating(0.99), "excellent");
+        assert_eq!(apdex_rating(0.2), "unacceptable");
+    }
 
     #[test]
     fn test_to_ms_conversion() {

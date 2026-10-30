@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🔄 Changed
 
+- Redesigned terminal report: one-line verdict, sections (latency, status codes, failures, throughput), human-readable durations and sizes, and an Apdex rating.
 - Removed the unused `rand`, `uuid` and `async-trait` dependencies (`uuid` was what raised the minimum Rust version).
 - Latency histograms/percentiles now contain **successful requests only**; failures appear in counters and the error breakdown. Apdex counts failed requests as frustrated.
 - The CSV export has an extra column with the service time; baseline files record `schema_version`, `error_rate_percent` and `latency_mode`.

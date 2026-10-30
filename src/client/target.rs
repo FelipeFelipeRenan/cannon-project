@@ -514,7 +514,8 @@ fn describe_http_error(
     let lower = chain.to_lowercase();
 
     // EMFILE (24) / ENFILE (23) on Unix: the process ran out of descriptors.
-    if matches!(os_error, Some(23 | 24)) || lower.contains("too many open files") {
+    // (On Windows those numbers mean something else, so only the text counts.)
+    if (cfg!(unix) && matches!(os_error, Some(23 | 24))) || lower.contains("too many open files") {
         return "File Descriptor Limit: too many open files (raise `ulimit -n` or use fewer workers)"
             .to_string();
     }
@@ -537,7 +538,11 @@ fn describe_http_error(
         || lower.contains("handshake")
     {
         "TLS Error"
-    } else if lower.contains("connection refused") {
+    } else if lower.contains("connection refused")
+        || lower.contains("actively refused")
+        // ECONNREFUSED on Linux, macOS and Windows (WSAECONNREFUSED).
+        || matches!(os_error, Some(111 | 61 | 10061))
+    {
         "Connection Refused"
     } else if lower.contains("connection reset") {
         "Connection Reset"
@@ -879,7 +884,7 @@ mod tests {
         Target::new_tcp_with_options(
             address,
             1,
-            Duration::from_secs(1),
+            Duration::from_millis(500),
             Duration::from_secs(2),
             read,
         )
@@ -962,9 +967,11 @@ mod tests {
 
         server.await.unwrap();
 
-        // Many more requests than connections: none of them may hang.
-        let all = tokio::time::timeout(Duration::from_secs(5), async {
-            for _ in 0..20 {
+        // More requests than connections: none of them may hang. (Windows
+        // can take close to the connect timeout to refuse a connection, so
+        // the count is kept small and the bound generous.)
+        let all = tokio::time::timeout(Duration::from_secs(30), async {
+            for _ in 0..5 {
                 assert!(!target.fire(b"ping").await.success);
             }
         })
