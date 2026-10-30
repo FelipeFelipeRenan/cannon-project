@@ -43,9 +43,65 @@ fn run() -> AppResult<ExitCode> {
     args.validate()
         .map_err(|error| format!("invalid configuration: {error}"))?;
 
+    if let Some(limit) = raise_fd_limit() {
+        // Each worker may hold a socket, plus a few descriptors for files.
+        if u64::from(args.workers) + 64 > limit {
+            eprintln!(
+                "{} {} workers may exceed the open-file limit ({limit}); \
+                 expect 'File Descriptor Limit' errors or raise `ulimit -n`",
+                "⚠️ ".yellow(),
+                args.workers
+            );
+        }
+    }
+
     let runtime = build_runtime(&args)?;
 
     runtime.block_on(run_app(args))
+}
+
+/// Raises the soft open-file limit to the hard limit and returns the
+/// resulting soft limit (`None` where it cannot be determined).
+#[cfg(unix)]
+fn raise_fd_limit() -> Option<u64> {
+    let mut limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+
+    // SAFETY: `limit` is a valid, writable rlimit for the duration of the calls.
+    unsafe {
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) != 0 {
+            return None;
+        }
+
+        if limit.rlim_cur < limit.rlim_max {
+            let mut raised = limit;
+
+            // macOS rejects values above OPEN_MAX even when the hard limit is
+            // "infinity", so fall back to the previous value on failure.
+            #[cfg(target_os = "macos")]
+            {
+                raised.rlim_cur = raised.rlim_max.min(10_240);
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                raised.rlim_cur = raised.rlim_max;
+            }
+
+            if libc::setrlimit(libc::RLIMIT_NOFILE, &raised) == 0 {
+                limit = raised;
+            }
+        }
+    }
+
+    #[allow(clippy::unnecessary_cast)] // `rlim_t` width varies per platform
+    Some(limit.rlim_cur as u64)
+}
+
+#[cfg(not(unix))]
+fn raise_fd_limit() -> Option<u64> {
+    None
 }
 
 fn build_runtime(args: &Args) -> AppResult<tokio::runtime::Runtime> {
