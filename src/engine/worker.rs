@@ -96,27 +96,41 @@ pub struct WorkerResult {
     pub assertion_failures: u64,
 }
 
-/// A single request result formatted for CSV output.
+/// A single request result queued for the CSV export.
 ///
-/// The fields are stored as strings because they are written directly to the
-/// CSV representation of the load-test results.
+/// Workers only store plain values; turning them into text happens in the
+/// writer thread (see [`CsvRecord::to_row`]), off the request hot path.
 pub struct CsvRecord {
     /// Elapsed time since the beginning of the measurement phase, in milliseconds.
-    pub relative_ms: String,
+    pub relative_ms: u64,
 
-    /// Result status of the request.
-    pub status: String,
+    /// HTTP status code, if the request got a response.
+    pub status: Option<u16>,
 
-    /// Response time in milliseconds (measured from the scheduled send time
-    /// when requests are paced, otherwise equal to `service_ms`).
-    pub latency_ms: String,
+    /// Response time (measured from the scheduled send time when requests
+    /// are paced, otherwise equal to `service`).
+    pub latency: Duration,
 
     /// Error description, if the request failed.
     pub error: String,
 
-    /// Service time in milliseconds (from sending until the response was
-    /// complete), excluding any time spent waiting to be sent.
-    pub service_ms: String,
+    /// Service time (from sending until the response was complete),
+    /// excluding any time spent waiting to be sent.
+    pub service: Duration,
+}
+
+impl CsvRecord {
+    /// Formats the record as the five CSV columns.
+    pub fn to_row(&self) -> [String; 5] {
+        [
+            self.relative_ms.to_string(),
+            self.status
+                .map_or_else(|| "N/A".to_string(), |code| code.to_string()),
+            format_millis(self.latency),
+            self.error.clone(),
+            format_millis(self.service),
+        ]
+    }
 }
 
 /// A unit of work handed from the scheduler to a worker.
@@ -170,6 +184,49 @@ struct WorkerCounts {
     status_counts: HashMap<u16, u64>,
     error_counts: HashMap<String, u64>,
     assertion_failures: u64,
+    /// Totals not yet added to the shared atomics (see [`Pending`]).
+    pending: Pending,
+}
+
+/// Aggregate counters accumulated locally and published in batches.
+///
+/// Every request used to do four or five atomic read-modify-write operations
+/// on cache lines shared by all workers. Batching turns that into a few per
+/// [`FLUSH_EVERY`] requests; the totals are exact once a worker finishes.
+#[derive(Default)]
+struct Pending {
+    measured: u64,
+    successes: u64,
+    failures: u64,
+    bytes_sent: u64,
+    bytes_received: u64,
+}
+
+/// Requests a worker accumulates before publishing its counters.
+const FLUSH_EVERY: u64 = 8;
+
+impl Pending {
+    fn flush(&mut self, shared: &SharedMetrics) {
+        if self.measured == 0 {
+            return;
+        }
+
+        shared
+            .measured_requests
+            .fetch_add(self.measured, Ordering::Relaxed);
+        shared
+            .successes
+            .fetch_add(self.successes, Ordering::Relaxed);
+        shared.failures.fetch_add(self.failures, Ordering::Relaxed);
+        shared
+            .bytes_sent
+            .fetch_add(self.bytes_sent, Ordering::Relaxed);
+        shared
+            .bytes_received
+            .fetch_add(self.bytes_received, Ordering::Relaxed);
+
+        *self = Pending::default();
+    }
 }
 
 impl WorkerCounts {
@@ -198,26 +255,25 @@ fn record_result(
         return;
     }
 
-    shared.measured_requests.fetch_add(1, Ordering::Relaxed);
+    counts.pending.measured += 1;
 
     if res.success {
-        shared.successes.fetch_add(1, Ordering::Relaxed);
+        counts.pending.successes += 1;
 
         // Only successful requests feed the latency histograms, so fast
         // failures cannot make latency look better than it is.
         histograms.response.record(response_time.as_micros() as u64);
         histograms.service.record(res.duration.as_micros() as u64);
     } else {
-        shared.failures.fetch_add(1, Ordering::Relaxed);
+        counts.pending.failures += 1;
     }
 
-    shared
-        .bytes_sent
-        .fetch_add(res.bytes_sent, Ordering::Relaxed);
+    counts.pending.bytes_sent += res.bytes_sent;
+    counts.pending.bytes_received += res.bytes_received;
 
-    shared
-        .bytes_received
-        .fetch_add(res.bytes_received, Ordering::Relaxed);
+    if counts.pending.measured >= FLUSH_EVERY {
+        counts.pending.flush(shared);
+    }
 
     if let Some(code) = res.status_code {
         *counts.status_counts.entry(code).or_insert(0) += 1;
@@ -367,6 +423,53 @@ async fn produce(
     }
 }
 
+/// Where a worker gets its next job from.
+enum JobSource {
+    /// A scheduler sends jobs through a channel (needed for `--rps`, where a
+    /// single clock decides when each request is due).
+    Channel(async_channel::Receiver<Job>),
+    /// Closed-loop load: workers claim work themselves, with no scheduler
+    /// task and no channel hop per request.
+    Claim(Arc<Claim>),
+}
+
+/// Shared description of closed-loop work to be claimed by workers.
+struct Claim {
+    /// Requests still to be sent (measurement phase).
+    remaining: AtomicU64,
+    /// Stop claiming at this instant (warm-up phase).
+    deadline: Option<Instant>,
+    warmup: bool,
+}
+
+impl JobSource {
+    async fn next(&self) -> Option<Job> {
+        match self {
+            JobSource::Channel(rx) => rx.recv().await.ok(),
+            JobSource::Claim(claim) => {
+                if let Some(deadline) = claim.deadline {
+                    if Instant::now() >= deadline {
+                        return None;
+                    }
+                } else if claim
+                    .remaining
+                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
+                        left.checked_sub(1)
+                    })
+                    .is_err()
+                {
+                    return None;
+                }
+
+                Some(Job {
+                    warmup: claim.warmup,
+                    scheduled: None,
+                })
+            }
+        }
+    }
+}
+
 /// Where a worker reports what it measures.
 struct Sinks<'a> {
     shared: &'a SharedMetrics,
@@ -377,7 +480,7 @@ struct Sinks<'a> {
 
 /// Executes jobs until the channel is closed (or the future is dropped).
 async fn worker_loop(
-    rx: async_channel::Receiver<Job>,
+    source: JobSource,
     template: Option<Arc<PayloadTemplate>>,
     target: Arc<Target>,
     sinks: Sinks<'_>,
@@ -392,18 +495,33 @@ async fn worker_loop(
 
     let mut payload_buffer = Vec::with_capacity(1024);
 
-    while let Ok(job) = rx.recv().await {
-        if let Some(tpl) = &template {
-            tpl.render(&mut payload_buffer);
-        }
+    // A payload without dynamic tags is rendered once and shared by
+    // reference count, instead of being rendered and copied per request.
+    let static_payload: Option<bytes::Bytes> = template
+        .as_ref()
+        .filter(|template| template.is_static())
+        .map(|template| {
+            template.render(&mut payload_buffer);
 
-        let payload_ref: &[u8] = if template.is_some() {
-            payload_buffer.as_slice()
+            bytes::Bytes::copy_from_slice(&payload_buffer)
+        });
+
+    while let Some(job) = source.next().await {
+        let res = if let Some(payload) = &static_payload {
+            target.fire_shared(payload).await
         } else {
-            &[]
-        };
+            if let Some(tpl) = &template {
+                tpl.render(&mut payload_buffer);
+            }
 
-        let res = target.fire(payload_ref).await;
+            let payload_ref: &[u8] = if template.is_some() {
+                payload_buffer.as_slice()
+            } else {
+                &[]
+            };
+
+            target.fire(payload_ref).await
+        };
 
         let service_time = res.duration;
 
@@ -422,14 +540,11 @@ async fn worker_loop(
 
         if let Some(tx) = &csv_tx {
             let record = CsvRecord {
-                relative_ms: start_time.elapsed().as_millis().to_string(),
-                status: res
-                    .status_code
-                    .map(|code| code.to_string())
-                    .unwrap_or_else(|| "N/A".to_string()),
-                latency_ms: format_millis(response_time),
+                relative_ms: start_time.elapsed().as_millis() as u64,
+                status: res.status_code,
+                latency: response_time,
                 error: res.error.unwrap_or_default(),
-                service_ms: format_millis(service_time),
+                service: service_time,
             };
 
             let _ = tx.send(record).await;
@@ -455,6 +570,16 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
         start_time,
     } = config;
 
+    // Without `--rps` there is no clock to follow, so workers claim work
+    // directly. With `--rps` a scheduler paces the jobs through a channel.
+    let claim = rps.is_none().then(|| {
+        Arc::new(Claim {
+            remaining: AtomicU64::new(u64::from(count.unwrap_or(0))),
+            deadline: duration.map(|duration| Instant::now() + duration),
+            warmup: count.is_none(),
+        })
+    });
+
     let (job_tx, job_rx) = async_channel::bounded::<Job>(workers.max(1) as usize);
 
     let parallelism = std::thread::available_parallelism().map_or(2, |count| count.get());
@@ -470,7 +595,10 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
     for worker_index in 0..workers as usize {
         let shards = shards.clone();
         let template = template.clone();
-        let rx = job_rx.clone();
+        let source = match &claim {
+            Some(claim) => JobSource::Claim(claim.clone()),
+            None => JobSource::Channel(job_rx.clone()),
+        };
         let target = target.clone();
         let shared = shared_metrics.clone();
         let csv_tx = csv_tx.clone();
@@ -485,7 +613,7 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
             // `counts` keep everything recorded so far.
             tokio::select! {
                 _ = worker_loop(
-                    rx,
+                    source,
                     template,
                     target,
                     Sinks { shared: &shared, histograms, csv_tx, start_time },
@@ -493,6 +621,9 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
                 ) => {}
                 _ = shared.cancelled() => {}
             }
+
+            // Publish what is still batched locally (also after a cancel).
+            counts.pending.flush(&shared);
 
             counts
         }));
@@ -502,9 +633,11 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
     // `send` must fail instead of waiting forever.
     drop(job_rx);
 
-    tokio::select! {
-        _ = produce(&job_tx, count, duration, rps, ramp_up_duration) => {}
-        _ = shared_metrics.cancelled() => {}
+    if claim.is_none() {
+        tokio::select! {
+            _ = produce(&job_tx, count, duration, rps, ramp_up_duration) => {}
+            _ = shared_metrics.cancelled() => {}
+        }
     }
 
     drop(job_tx);
