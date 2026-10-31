@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🚀 Added
 
+- A hint is printed when more than half of the requests fail, pointing at the most likely cause (refused connection, DNS, TLS, timeouts, descriptor limit, TCP framing, unexpected status codes).
+- Seeded fuzz tests for the payload, status-filter, delimiter and baseline parsers, and a test that `{{email}}`/`{{username}}` do not collide over 200 000 values.
 - `--max-redirects N` to follow redirects (default 0), `--expect-status` to define which status codes count as success (`200,404`, `2xx`), `--cacert` for private CAs, `--cert`/`--key` for mutual TLS and `--no-color` (all also available in YAML).
 - `--no-proxy` (CLI and YAML), plus a warning when `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` is set, since the proxy would be part of what is measured.
 - `rust-version = "1.88"` in `Cargo.toml` and a CI job that checks the build with it.
@@ -41,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🔄 Changed
 
+- Scripts renamed: `long-runing.sh` → `long-running.sh`, `profile-tcp-scalling.sh` → `profile-tcp-scaling.sh`; `benchmark-results/` is git-ignored.
+- README documents `{{timestamp}}` (milliseconds), `{{seq}}` and the range of `{{number}}`; the TCP benchmark note explains the framing change.
 - The HTML dashboard embeds Chart.js 4.4.1 (MIT), so it works offline and no longer depends on an unpinned CDN script.
 - Unknown keys in the YAML config file are now an error (a typo such as `worker:` used to be ignored silently).
 - Redesigned terminal report: one-line verdict, sections (latency, status codes, failures, throughput), human-readable durations and sizes, and an Apdex rating.

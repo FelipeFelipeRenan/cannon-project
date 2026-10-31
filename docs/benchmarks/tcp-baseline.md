@@ -2,6 +2,14 @@
 
 This document records the baseline established during the Cannon v2.1.0 performance audit.
 
+> **Note:** this baseline was recorded on v2.1.0. Since v2.2.0 TCP mode reads
+> exactly one byte per response by default (`--tcp-read-bytes 1`), which is
+> what this one-byte echo workload needs, so the command below is still valid.
+> Servers that answer with more bytes need `--tcp-read-bytes N` or
+> `--tcp-read-until`, otherwise Cannon reports a `Response Framing` error.
+> The figures describe v2.1.0 and should be re-measured before being quoted
+> for newer releases.
+
 ## Environment
 
 - OS/runtime environment: WSL2

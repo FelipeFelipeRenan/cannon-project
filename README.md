@@ -202,10 +202,11 @@ Available dynamic values include:
 | Tag             | Description            |
 | --------------- | ---------------------- |
 | `{{uuid}}`      | UUID v4                |
-| `{{email}}`     | Random email           |
-| `{{username}}`  | Random username        |
-| `{{number}}`    | Random number          |
-| `{{timestamp}}` | Current Unix timestamp |
+| `{{email}}`     | Random email (64-bit random part, no practical collisions) |
+| `{{username}}`  | Random username (64-bit random part) |
+| `{{number}}`    | Random number from 1 to 999999 (repeats on long runs; use `{{uuid}}` or `{{seq}}` for unique values) |
+| `{{seq}}`       | Sequential counter     |
+| `{{timestamp}}` | Current Unix time in **milliseconds** |
 
 ---
 
