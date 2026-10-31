@@ -198,6 +198,35 @@ pub struct Args {
     #[arg(short = 'k', long, help_heading = "Request")]
     pub insecure: bool,
 
+    /// PEM file with extra CA certificate(s) to trust (private/internal CAs).
+    #[arg(long, value_name = "FILE", help_heading = "Request")]
+    pub cacert: Option<String>,
+
+    /// PEM client certificate for mutual TLS (use together with --key).
+    #[arg(long, value_name = "FILE", requires = "key", help_heading = "Request")]
+    pub cert: Option<String>,
+
+    /// PEM private key of the client certificate (use together with --cert).
+    #[arg(long, value_name = "FILE", requires = "cert", help_heading = "Request")]
+    pub key: Option<String>,
+
+    /// Follow up to N redirects per request (default 0: report the 3xx).
+    ///
+    /// Every followed redirect is an extra request to the server, so the
+    /// server sees more hits than Cannon reports.
+    #[arg(long, value_name = "N", default_value_t = 0, help_heading = "Request")]
+    pub max_redirects: usize,
+
+    /// Status codes that count as success, e.g. `200,404` or `2xx,3xx`.
+    ///
+    /// Default: any 2xx. A response whose status is not listed is a failure.
+    #[arg(long, value_name = "CODES", help_heading = "Request")]
+    pub expect_status: Option<String>,
+
+    /// Disable colored output.
+    #[arg(long, help_heading = "Runtime")]
+    pub no_color: bool,
+
     /// Force HTTP/2 prior knowledge.
     ///
     /// Useful when communicating with localhost or other h2c endpoints.
@@ -348,6 +377,14 @@ impl Args {
 
         for header in &self.headers {
             validate_header(header)?;
+        }
+
+        if let Some(spec) = &self.expect_status {
+            crate::client::target::StatusFilter::parse(spec)?;
+        }
+
+        if self.cert.is_some() != self.key.is_some() {
+            return Err("--cert and --key must be used together".to_string());
         }
 
         if let Some(ramp_up) = &self.ramp_up {
@@ -513,6 +550,24 @@ pub struct FileConfig {
 
     /// Ignore proxy environment variables.
     pub no_proxy: Option<bool>,
+
+    /// Extra CA certificates (PEM).
+    pub cacert: Option<String>,
+
+    /// Client certificate (PEM).
+    pub cert: Option<String>,
+
+    /// Client private key (PEM).
+    pub key: Option<String>,
+
+    /// Maximum number of redirects to follow.
+    pub max_redirects: Option<usize>,
+
+    /// Status codes that count as success.
+    pub expect_status: Option<String>,
+
+    /// Disable colored output.
+    pub no_color: Option<bool>,
 
     /// Pin Tokio worker threads to CPU cores.
     pub pin_threads: Option<bool>,

@@ -149,6 +149,42 @@ pub fn merge_with_yaml(
             }
         }
 
+        if let Some(value) = conf.cacert {
+            if !was_provided_by_cli(matches, "cacert") {
+                args.cacert = Some(value);
+            }
+        }
+
+        if let Some(value) = conf.cert {
+            if !was_provided_by_cli(matches, "cert") {
+                args.cert = Some(value);
+            }
+        }
+
+        if let Some(value) = conf.key {
+            if !was_provided_by_cli(matches, "key") {
+                args.key = Some(value);
+            }
+        }
+
+        if let Some(value) = conf.expect_status {
+            if !was_provided_by_cli(matches, "expect_status") {
+                args.expect_status = Some(value);
+            }
+        }
+
+        if let Some(value) = conf.max_redirects {
+            if !was_provided_by_cli(matches, "max_redirects") {
+                args.max_redirects = value;
+            }
+        }
+
+        if let Some(value) = conf.no_color {
+            if !was_provided_by_cli(matches, "no_color") {
+                args.no_color = value;
+            }
+        }
+
         if let Some(no_proxy) = conf.no_proxy {
             if !was_provided_by_cli(matches, "no_proxy") {
                 args.no_proxy = no_proxy;
@@ -385,6 +421,12 @@ tolerance: 7.5
 max_error_rate: 1.5
 pin_threads: true
 no_proxy: true
+cacert: ca.pem
+cert: c.pem
+key: k.pem
+max_redirects: 3
+expect_status: "200,404"
+no_color: true
 "#,
         );
 
@@ -396,6 +438,8 @@ no_proxy: true
         assert_eq!(args.count, 7);
         assert_eq!(args.tolerance, 7.5);
         assert!(args.pin_threads && args.http2 && args.insecure && args.no_proxy);
+        assert_eq!(args.max_redirects, 3);
+        assert_eq!(args.expect_status.as_deref(), Some("200,404"));
 
         fs::remove_file(config_path).unwrap();
     }

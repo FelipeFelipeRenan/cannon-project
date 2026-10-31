@@ -97,6 +97,9 @@ pub enum Target {
         /// Optional response body content that must be present for an
         /// assertion to succeed.
         expected_body: Option<Arc<String>>,
+
+        /// Status codes that count as success (`None`: any 2xx).
+        accepted_status: Option<Arc<StatusFilter>>,
     },
 
     /// Raw TCP target backed by a pool of reusable connection slots.
@@ -169,12 +172,28 @@ impl Target {
         headers: Arc<Vec<String>>,
         expected_body: Option<Arc<String>>,
     ) -> Self {
+        Self::new_http_with_status(client, url, method, headers, expected_body, None)
+    }
+
+    /// Creates an HTTP target with a custom definition of success.
+    ///
+    /// Responses whose status is accepted by `accepted_status` count as
+    /// successful; with `None`, any 2xx response does.
+    pub fn new_http_with_status(
+        client: reqwest::Client,
+        url: String,
+        method: reqwest::Method,
+        headers: Arc<Vec<String>>,
+        expected_body: Option<Arc<String>>,
+        accepted_status: Option<Arc<StatusFilter>>,
+    ) -> Self {
         Self::Http {
             client,
             url,
             method,
             headers,
             expected_body,
+            accepted_status,
         }
     }
 
@@ -362,6 +381,7 @@ impl Target {
                 method,
                 headers,
                 expected_body,
+                accepted_status,
             } => {
                 let mut req = client.request(method.clone(), url);
                 if !payload.is_empty() {
@@ -402,7 +422,12 @@ impl Target {
                             error: error_msg,
                             bytes_sent: payload.len() as u64,
                             bytes_received: bytes_recv,
-                            success: (200..300).contains(&status) && assert_ok,
+                            success: accepted_status
+                                .as_ref()
+                                .map_or((200..300).contains(&status), |filter| {
+                                    filter.accepts(status)
+                                })
+                                && assert_ok,
                             assertion_success: assert_ok,
                         }
                     }
@@ -469,6 +494,62 @@ impl Target {
                 }
             }
         }
+    }
+}
+
+/// Set of HTTP status codes that count as a successful response.
+///
+/// Parsed from a comma-separated list of exact codes (`404`) and classes
+/// (`2xx`), for example `200,301,4xx`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusFilter {
+    ranges: Vec<(u16, u16)>,
+}
+
+impl StatusFilter {
+    /// Parses a specification such as `200,404` or `2xx,3xx`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a description of the problem for an empty list, an unknown
+    /// class or a code outside `100..=599`.
+    pub fn parse(spec: &str) -> Result<Self, String> {
+        let mut ranges = Vec::new();
+
+        for part in spec
+            .split(',')
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+        {
+            let lower = part.to_ascii_lowercase();
+
+            let range = if let Some(class) = lower.strip_suffix("xx") {
+                match class.parse::<u16>() {
+                    Ok(digit @ 1..=5) => (digit * 100, digit * 100 + 99),
+                    _ => return Err(format!("invalid status class '{part}' (use 1xx to 5xx)")),
+                }
+            } else {
+                match lower.parse::<u16>() {
+                    Ok(code @ 100..=599) => (code, code),
+                    _ => return Err(format!("invalid status code '{part}' (use 100-599)")),
+                }
+            };
+
+            ranges.push(range);
+        }
+
+        if ranges.is_empty() {
+            return Err("expect-status must list at least one status code".to_string());
+        }
+
+        Ok(Self { ranges })
+    }
+
+    /// Returns `true` when `status` counts as success.
+    pub fn accepts(&self, status: u16) -> bool {
+        self.ranges
+            .iter()
+            .any(|&(low, high)| (low..=high).contains(&status))
     }
 }
 
@@ -1030,5 +1111,18 @@ mod tests {
         )
         .starts_with("File Descriptor Limit"));
         assert!(describe(false, false, false, None, "boom").starts_with("Network Error"));
+    }
+
+    #[test]
+    fn status_filter_accepts_codes_and_classes() {
+        let filter = StatusFilter::parse("200, 404,3xx").unwrap();
+
+        assert!(filter.accepts(200) && filter.accepts(404) && filter.accepts(301));
+        assert!(!filter.accepts(201) && !filter.accepts(500));
+
+        assert!(StatusFilter::parse("").is_err());
+        assert!(StatusFilter::parse("abc").is_err());
+        assert!(StatusFilter::parse("99").is_err());
+        assert!(StatusFilter::parse("6xx").is_err());
     }
 }

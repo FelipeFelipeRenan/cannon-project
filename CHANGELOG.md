@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🚀 Added
 
+- `--max-redirects N` to follow redirects (default 0), `--expect-status` to define which status codes count as success (`200,404`, `2xx`), `--cacert` for private CAs, `--cert`/`--key` for mutual TLS and `--no-color` (all also available in YAML).
 - `--no-proxy` (CLI and YAML), plus a warning when `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` is set, since the proxy would be part of what is measured.
 - `rust-version = "1.88"` in `Cargo.toml` and a CI job that checks the build with it.
 - On Unix, Cannon raises the open-file soft limit to the hard limit at startup and warns when `--workers` still would not fit.
