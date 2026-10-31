@@ -1,3 +1,4 @@
+use super::histogram::AtomicHistogram;
 use crate::client::target::{Target, TargetResult};
 use crate::payload::generator::PayloadTemplate;
 use hdrhistogram::Histogram;
@@ -139,40 +140,49 @@ struct PhaseConfig {
     start_time: Instant,
 }
 
-/// Per-worker accumulators, merged by the caller after the phase ends.
-struct LocalStats {
-    histogram: Histogram<u64>,
-    service_histogram: Histogram<u64>,
+/// Latency histograms of one shard of workers.
+///
+/// Workers share a small, fixed number of shards (about twice the CPU count)
+/// instead of owning private histograms: an HdrHistogram grows with the
+/// latencies it sees (130 KB per worker pair at 300 ms), so per-worker
+/// histograms made memory proportional to the number of workers. The shard
+/// histograms are lock-free ([`AtomicHistogram`]): recording is one atomic
+/// increment, and spreading workers over shards only reduces cache-line
+/// contention.
+struct ShardHistograms {
+    response: AtomicHistogram,
+    service: AtomicHistogram,
+}
+
+impl ShardHistograms {
+    fn new() -> Self {
+        Self {
+            response: AtomicHistogram::new(),
+            service: AtomicHistogram::new(),
+        }
+    }
+}
+
+/// Counters owned by a single worker (no sharing, no synchronisation); they
+/// are merged into the shard results after the phase ends.
+#[derive(Default)]
+struct WorkerCounts {
     status_counts: HashMap<u16, u64>,
     error_counts: HashMap<String, u64>,
     assertion_failures: u64,
 }
 
-impl LocalStats {
-    fn new() -> Self {
-        // Auto-resizing histograms start tiny, which keeps thousands of
-        // workers cheap (a fixed 24-hour range cost ~0.25 MB per worker).
-        let histogram = || {
-            Histogram::<u64>::new(3).expect("3 significant figures is a valid histogram precision")
-        };
-
-        Self {
-            histogram: histogram(),
-            service_histogram: histogram(),
-            status_counts: HashMap::new(),
-            error_counts: HashMap::new(),
-            assertion_failures: 0,
+impl WorkerCounts {
+    fn merge_into(self, target: &mut WorkerCounts) {
+        for (code, count) in self.status_counts {
+            *target.status_counts.entry(code).or_insert(0) += count;
         }
-    }
 
-    fn into_result(self) -> WorkerResult {
-        WorkerResult {
-            histogram: self.histogram,
-            service_histogram: self.service_histogram,
-            status_counts: self.status_counts,
-            error_counts: self.error_counts,
-            assertion_failures: self.assertion_failures,
+        for (message, count) in self.error_counts {
+            *target.error_counts.entry(message).or_insert(0) += count;
         }
+
+        target.assertion_failures += self.assertion_failures;
     }
 }
 
@@ -181,7 +191,8 @@ fn record_result(
     response_time: Duration,
     is_warmup: bool,
     shared: &SharedMetrics,
-    stats: &mut LocalStats,
+    histograms: &ShardHistograms,
+    counts: &mut WorkerCounts,
 ) {
     if is_warmup {
         return;
@@ -192,13 +203,10 @@ fn record_result(
     if res.success {
         shared.successes.fetch_add(1, Ordering::Relaxed);
 
-        // Only successful requests feed the latency histograms. `record`
-        // grows the auto-resizing histogram; `saturating_record` would clamp
-        // every value to the histogram's *current* maximum (2 us at start).
-        let _ = stats.histogram.record(response_time.as_micros() as u64);
-        let _ = stats
-            .service_histogram
-            .record(res.duration.as_micros() as u64);
+        // Only successful requests feed the latency histograms, so fast
+        // failures cannot make latency look better than it is.
+        histograms.response.record(response_time.as_micros() as u64);
+        histograms.service.record(res.duration.as_micros() as u64);
     } else {
         shared.failures.fetch_add(1, Ordering::Relaxed);
     }
@@ -212,15 +220,15 @@ fn record_result(
         .fetch_add(res.bytes_received, Ordering::Relaxed);
 
     if let Some(code) = res.status_code {
-        *stats.status_counts.entry(code).or_insert(0) += 1;
+        *counts.status_counts.entry(code).or_insert(0) += 1;
     }
 
     if let Some(err) = &res.error {
-        *stats.error_counts.entry(err.clone()).or_insert(0) += 1;
+        *counts.error_counts.entry(err.clone()).or_insert(0) += 1;
     }
 
     if !res.assertion_success {
-        stats.assertion_failures += 1;
+        counts.assertion_failures += 1;
     }
 }
 
@@ -359,16 +367,29 @@ async fn produce(
     }
 }
 
+/// Where a worker reports what it measures.
+struct Sinks<'a> {
+    shared: &'a SharedMetrics,
+    histograms: &'a ShardHistograms,
+    csv_tx: Option<mpsc::Sender<CsvRecord>>,
+    start_time: Instant,
+}
+
 /// Executes jobs until the channel is closed (or the future is dropped).
 async fn worker_loop(
     rx: async_channel::Receiver<Job>,
     template: Option<Arc<PayloadTemplate>>,
     target: Arc<Target>,
-    shared: &SharedMetrics,
-    csv_tx: Option<mpsc::Sender<CsvRecord>>,
-    start_time: Instant,
-    stats: &mut LocalStats,
+    sinks: Sinks<'_>,
+    counts: &mut WorkerCounts,
 ) {
+    let Sinks {
+        shared,
+        histograms,
+        csv_tx,
+        start_time,
+    } = sinks;
+
     let mut payload_buffer = Vec::with_capacity(1024);
 
     while let Ok(job) = rx.recv().await {
@@ -393,7 +414,7 @@ async fn worker_loop(
             scheduled.elapsed().max(service_time)
         });
 
-        record_result(&res, response_time, job.warmup, shared, stats);
+        record_result(&res, response_time, job.warmup, shared, histograms, counts);
 
         if job.warmup {
             continue;
@@ -436,9 +457,18 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
 
     let (job_tx, job_rx) = async_channel::bounded::<Job>(workers.max(1) as usize);
 
+    let parallelism = std::thread::available_parallelism().map_or(2, |count| count.get());
+
+    // Each shard holds ~380 KB of counters, so the count is capped.
+    let shard_count = (workers as usize).min(parallelism * 2).clamp(1, 32);
+
+    let shards: Arc<Vec<ShardHistograms>> =
+        Arc::new((0..shard_count).map(|_| ShardHistograms::new()).collect());
+
     let mut handles = Vec::with_capacity(workers as usize);
 
-    for _ in 0..workers {
+    for worker_index in 0..workers as usize {
+        let shards = shards.clone();
         let template = template.clone();
         let rx = job_rx.clone();
         let target = target.clone();
@@ -446,18 +476,25 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
         let csv_tx = csv_tx.clone();
 
         handles.push(tokio::spawn(async move {
-            let mut stats = LocalStats::new();
+            let histograms = &shards[worker_index % shards.len()];
+            let mut counts = WorkerCounts::default();
 
             // A single `select!` per worker (not per request) keeps the hot
             // path free of cancellation overhead. When cancelled, the loop
-            // (and the request in flight) is dropped; `stats` keeps
-            // everything recorded so far.
+            // (and the request in flight) is dropped; the histograms and
+            // `counts` keep everything recorded so far.
             tokio::select! {
-                _ = worker_loop(rx, template, target, &shared, csv_tx, start_time, &mut stats) => {}
+                _ = worker_loop(
+                    rx,
+                    template,
+                    target,
+                    Sinks { shared: &shared, histograms, csv_tx, start_time },
+                    &mut counts,
+                ) => {}
                 _ = shared.cancelled() => {}
             }
 
-            stats.into_result()
+            counts
         }));
     }
 
@@ -472,11 +509,28 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
 
     drop(job_tx);
 
-    let mut results = Vec::with_capacity(handles.len());
+    let mut shard_counts: Vec<WorkerCounts> =
+        (0..shards.len()).map(|_| WorkerCounts::default()).collect();
 
-    for handle in handles {
-        results.push(handle.await?);
+    for (worker_index, handle) in handles.into_iter().enumerate() {
+        handle
+            .await?
+            .merge_into(&mut shard_counts[worker_index % shards.len()]);
     }
+
+    // One result per shard. Every worker task has finished, so the
+    // histograms are not written any more.
+    let results: Vec<WorkerResult> = shards
+        .iter()
+        .zip(shard_counts)
+        .map(|(histograms, counts)| WorkerResult {
+            histogram: histograms.response.export(),
+            service_histogram: histograms.service.export(),
+            status_counts: counts.status_counts,
+            error_counts: counts.error_counts,
+            assertion_failures: counts.assertion_failures,
+        })
+        .collect();
 
     Ok(results)
 }
