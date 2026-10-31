@@ -43,6 +43,10 @@ fn run() -> AppResult<ExitCode> {
     args.validate()
         .map_err(|error| format!("invalid configuration: {error}"))?;
 
+    if args.no_color {
+        colored::control::set_override(false);
+    }
+
     if !args.no_proxy && !args.mode.eq_ignore_ascii_case("tcp") {
         let proxy = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"]
             .iter()
@@ -311,13 +315,21 @@ async fn run_app(args: Args) -> AppResult<ExitCode> {
 
         Arc::new(tcp_target)
     } else {
-        let http_target = cannon::client::target::Target::new_http(
+        let accepted_status = args
+            .expect_status
+            .as_deref()
+            .map(cannon::client::target::StatusFilter::parse)
+            .transpose()?
+            .map(Arc::new);
+
+        let http_target = cannon::client::target::Target::new_http_with_status(
             http_client.clone(),
             url_str.clone(),
             reqwest::Method::from_bytes(args.method.as_bytes())
                 .map_err(|error| format!("invalid HTTP method '{}': {error}", args.method))?,
             Arc::new(args.headers.clone()),
             expect_arc,
+            accepted_status,
         );
         Arc::new(http_target)
     };

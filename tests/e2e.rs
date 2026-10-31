@@ -1106,3 +1106,140 @@ fn absurd_or_malformed_inputs_are_rejected_instead_of_panicking() {
         );
     }
 }
+
+/// An HTTP server that redirects `/` to `/final` and answers `/final` with 200.
+/// Returns its base URL and a counter of the requests it received.
+fn start_redirect_server() -> (String, Arc<AtomicU64>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let hits = Arc::new(AtomicU64::new(0));
+    let counter = hits.clone();
+
+    thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let counter = counter.clone();
+
+            thread::spawn(move || {
+                let mut buffer = [0u8; 8192];
+                let mut pending = Vec::new();
+
+                loop {
+                    let read = match stream.read(&mut buffer) {
+                        Ok(0) | Err(_) => return,
+                        Ok(read) => read,
+                    };
+
+                    pending.extend_from_slice(&buffer[..read]);
+
+                    while let Some(end) = find_head_end(&pending) {
+                        let head = String::from_utf8_lossy(&pending[..end]).to_string();
+
+                        pending.drain(..end);
+                        counter.fetch_add(1, Ordering::SeqCst);
+
+                        let response = if head.starts_with("GET /final") {
+                            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok".to_string()
+                        } else {
+                            "HTTP/1.1 301 Moved Permanently\r\nLocation: /final\r\nContent-Length: 0\r\n\r\n"
+                                .to_string()
+                        };
+
+                        if stream.write_all(response.as_bytes()).is_err() {
+                            return;
+                        }
+                    }
+                }
+            });
+        }
+    });
+
+    (format!("http://{address}/"), hits)
+}
+
+#[test]
+fn redirects_are_reported_by_default_and_followed_on_request() {
+    let (url, hits) = start_redirect_server();
+    let report = temp_path("redirect.json");
+
+    // Default: the 301 itself is what is measured (and it is a failure).
+    let _ = run_cannon(&[
+        "-u",
+        &url,
+        "-c",
+        "5",
+        "-w",
+        "1",
+        "-o",
+        report.to_str().unwrap(),
+    ]);
+    let json = read_json(&report);
+
+    assert_eq!(json["status_codes"]["301"], 5);
+    assert_eq!(json["failures"], 5);
+    assert_eq!(hits.load(Ordering::SeqCst), 5);
+
+    // Following redirects: 5 requests cost the server 10 hits.
+    hits.store(0, Ordering::SeqCst);
+
+    let output = run_cannon(&[
+        "-u",
+        &url,
+        "-c",
+        "5",
+        "-w",
+        "1",
+        "--max-redirects",
+        "3",
+        "-o",
+        report.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(read_json(&report)["successes"], 5);
+    assert_eq!(hits.load(Ordering::SeqCst), 10);
+
+    let _ = std::fs::remove_file(report);
+}
+
+#[test]
+fn expect_status_defines_what_counts_as_success() {
+    let (url, _hits) = start_redirect_server();
+    let report = temp_path("expect-status.json");
+
+    let output = run_cannon(&[
+        "-u",
+        &url,
+        "-c",
+        "5",
+        "-w",
+        "1",
+        "--expect-status",
+        "3xx",
+        "-o",
+        report.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(read_json(&report)["successes"], 5);
+
+    let bad = run_cannon(&["-u", &url, "--expect-status", "banana"]);
+
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(stderr(&bad).contains("invalid status code"));
+
+    let _ = std::fs::remove_file(report);
+}
+
+#[test]
+fn tls_files_are_validated_before_the_run() {
+    let url = unused_port_url();
+
+    let missing = run_cannon(&["-u", &url, "--cacert", "/nonexistent/ca.pem"]);
+
+    assert_eq!(missing.status.code(), Some(1));
+    assert!(stderr(&missing).contains("cannot read --cacert"));
+
+    let half = run_cannon(&["-u", &url, "--cert", "client.pem"]);
+
+    assert_ne!(half.status.code(), Some(0), "--cert needs --key");
+}

@@ -444,6 +444,12 @@ Cannon exposes a deliberately small command-line interface.
 | `-A, --user-agent`  | User-Agent                           |
 | `-t, --timeout`     | Request timeout                      |
 | `--connect-timeout` | TCP connection timeout               |
+| `--max-redirects`   | Follow up to N redirects (default 0: the 3xx is reported; each followed redirect is an extra hit on the server) |
+| `--expect-status`   | Status codes that count as success, e.g. `200,404` or `2xx,3xx` (default: any 2xx) |
+| `--cacert`          | PEM file with extra CA certificates to trust |
+| `--cert`, `--key`   | PEM client certificate and key (mutual TLS) |
+| `--no-proxy`        | Ignore `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` |
+| `--no-color`        | Disable colored output               |
 | `--expect`          | Response assertion                   |
 | `--percentiles`     | Custom latency percentiles           |
 | `--apdex-t`         | Apdex threshold                      |
