@@ -435,8 +435,11 @@ enum JobSource {
 
 /// Shared description of closed-loop work to be claimed by workers.
 struct Claim {
-    /// Requests still to be sent (measurement phase).
-    remaining: AtomicU64,
+    /// Number of requests claimed so far (measurement phase). It may end
+    /// above `total`: every worker claims once more before it stops.
+    claimed: AtomicU64,
+    /// Requests to be sent in the measurement phase.
+    total: u64,
     /// Stop claiming at this instant (warm-up phase).
     deadline: Option<Instant>,
     warmup: bool,
@@ -451,13 +454,11 @@ impl JobSource {
                     if Instant::now() >= deadline {
                         return None;
                     }
-                } else if claim
-                    .remaining
-                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
-                        left.checked_sub(1)
-                    })
-                    .is_err()
-                {
+                } else if claim.claimed.fetch_add(1, Ordering::Relaxed) >= claim.total {
+                    // A plain `fetch_add` (instead of `fetch_update`, which is
+                    // deprecated in recent Rust and replaced by an API newer
+                    // than our minimum supported version) is enough: the
+                    // counter overshoots by at most one claim per worker.
                     return None;
                 }
 
@@ -574,7 +575,8 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
     // directly. With `--rps` a scheduler paces the jobs through a channel.
     let claim = rps.is_none().then(|| {
         Arc::new(Claim {
-            remaining: AtomicU64::new(u64::from(count.unwrap_or(0))),
+            claimed: AtomicU64::new(0),
+            total: u64::from(count.unwrap_or(0)),
             deadline: duration.map(|duration| Instant::now() + duration),
             warmup: count.is_none(),
         })
