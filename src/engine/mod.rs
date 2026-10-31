@@ -3,6 +3,9 @@
 //! This module coordinates workers, scheduling, request execution, and
 //! aggregate metrics during a load test.
 
+/// Lock-free latency histogram shared by workers.
+pub mod histogram;
+
 /// Worker execution and metrics collection.
 pub mod worker;
 
