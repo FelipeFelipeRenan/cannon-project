@@ -365,13 +365,7 @@ async fn run_app(args: Args) -> AppResult<ExitCode> {
         // instead of stalling the async runtime.
         csv_handle = Some(tokio::task::spawn_blocking(move || {
             while let Some(rec) = rx.blocking_recv() {
-                writer.write_record([
-                    rec.relative_ms,
-                    rec.status,
-                    rec.latency_ms,
-                    rec.error,
-                    rec.service_ms,
-                ])?;
+                writer.write_record(rec.to_row())?;
             }
 
             writer.flush()?;

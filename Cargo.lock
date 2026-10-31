@@ -176,6 +176,7 @@ name = "cannon"
 version = "2.2.0"
 dependencies = [
  "async-channel",
+ "bytes",
  "clap",
  "colored",
  "core_affinity",

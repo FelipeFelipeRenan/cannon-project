@@ -199,6 +199,14 @@ impl PayloadTemplate {
         }))
     }
 
+    /// Returns `true` when every rendering produces the same bytes (the
+    /// template contains no dynamic tags).
+    pub fn is_static(&self) -> bool {
+        self.chunks
+            .iter()
+            .all(|chunk| matches!(chunk, Chunk::StaticText(_)))
+    }
+
     /// Non-fatal problems found while parsing, such as tags that are not
     /// recognised and will therefore be sent as literal text.
     pub fn warnings(&self) -> &[String] {

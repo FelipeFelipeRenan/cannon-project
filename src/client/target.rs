@@ -91,8 +91,8 @@ pub enum Target {
         /// HTTP method used for requests.
         method: reqwest::Method,
 
-        /// Additional HTTP headers applied to requests.
-        headers: Arc<Vec<String>>,
+        /// Additional HTTP headers, parsed once when the target is created.
+        header_map: reqwest::header::HeaderMap,
 
         /// Optional response body content that must be present for an
         /// assertion to succeed.
@@ -187,11 +187,27 @@ impl Target {
         expected_body: Option<Arc<String>>,
         accepted_status: Option<Arc<StatusFilter>>,
     ) -> Self {
+        // Parsing and validating headers on every request is wasted work,
+        // so it is done once. Malformed entries are skipped (the CLI already
+        // rejects them before the run starts).
+        let mut header_map = reqwest::header::HeaderMap::new();
+
+        for header in headers.iter() {
+            if let Some((name, value)) = header.split_once(':') {
+                if let (Ok(name), Ok(value)) = (
+                    reqwest::header::HeaderName::from_bytes(name.trim().as_bytes()),
+                    reqwest::header::HeaderValue::from_str(value.trim()),
+                ) {
+                    header_map.append(name, value);
+                }
+            }
+        }
+
         Self::Http {
             client,
             url,
             method,
-            headers,
+            header_map,
             expected_body,
             accepted_status,
         }
@@ -372,6 +388,19 @@ impl Target {
     /// produced by this request.
     #[inline(always)]
     pub async fn fire(&self, payload: &[u8]) -> TargetResult {
+        self.execute(payload, None).await
+    }
+
+    /// Executes a request whose payload never changes.
+    ///
+    /// For HTTP the body is shared by reference count instead of being
+    /// copied for every request.
+    #[inline(always)]
+    pub async fn fire_shared(&self, payload: &bytes::Bytes) -> TargetResult {
+        self.execute(payload, Some(payload)).await
+    }
+
+    async fn execute(&self, payload: &[u8], shared: Option<&bytes::Bytes>) -> TargetResult {
         let start = std::time::Instant::now();
 
         match self {
@@ -379,18 +408,19 @@ impl Target {
                 client,
                 url,
                 method,
-                headers,
+                header_map,
                 expected_body,
                 accepted_status,
             } => {
                 let mut req = client.request(method.clone(), url);
                 if !payload.is_empty() {
-                    req = req.body(payload.to_vec());
+                    req = match shared {
+                        Some(body) => req.body(body.clone()),
+                        None => req.body(payload.to_vec()),
+                    };
                 }
-                for h in headers.iter() {
-                    if let Some((k, v)) = h.split_once(':') {
-                        req = req.header(k.trim(), v.trim());
-                    }
+                if !header_map.is_empty() {
+                    req = req.headers(header_map.clone());
                 }
 
                 match req.send().await {
