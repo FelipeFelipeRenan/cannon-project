@@ -383,6 +383,10 @@ pub fn print_summary(
             .bold()
     );
 
+    if let Some(hint) = failure_hint(summary) {
+        println!("\n{}", format!("💡 {hint}").yellow());
+    }
+
     print_section("LATENCY");
 
     if successes > 0 {
@@ -528,6 +532,53 @@ pub fn print_summary(
         "\n{}",
         format!("Finished in {}", format_duration(summary.duration)).bright_black()
     );
+}
+
+/// Suggests a likely cause when most requests failed.
+///
+/// Only shown for runs large enough to be meaningful (at least 10 measured
+/// requests) in which more than half of the requests failed.
+fn failure_hint(summary: &RunSummary) -> Option<String> {
+    if summary.measured_requests < 10 || summary.error_rate_percent() <= 50.0 {
+        return None;
+    }
+
+    let top_error = summary
+        .error_counts
+        .iter()
+        .max_by_key(|(_, count)| **count)
+        .map(|(message, _)| message.as_str());
+
+    let advice = match top_error {
+        Some(error) if error.starts_with("Connection Refused") => {
+            "Nothing accepted the connection: is the server running and the address/port right?"
+        }
+        Some(error) if error.starts_with("DNS Error") => {
+            "The host name did not resolve: check the URL and your network/DNS."
+        }
+        Some(error) if error.starts_with("TLS Error") => {
+            "The TLS handshake failed: use --cacert for a private CA, or --insecure for a test certificate."
+        }
+        Some(error) if error.starts_with("Timeout") => {
+            "Requests are timing out: the server is overloaded or unreachable; consider a higher --timeout or fewer workers."
+        }
+        Some(error) if error.starts_with("File Descriptor Limit") => {
+            "Cannon ran out of file descriptors: raise `ulimit -n` or use fewer workers."
+        }
+        Some(error) if error.starts_with("Response Framing") => {
+            "The TCP response length does not match: set --tcp-read-bytes or --tcp-read-until."
+        }
+        Some(_) => "Most requests failed: check the error breakdown below.",
+        None => {
+            "Most responses were not successful: check the URL, authentication and --expect-status \
+             (see the status code distribution below)."
+        }
+    };
+
+    Some(format!(
+        "{:.0}% of the requests failed. {advice}",
+        summary.error_rate_percent()
+    ))
 }
 
 fn print_section(title: &str) {
@@ -696,6 +747,45 @@ mod tests {
         assert_eq!(format_bytes(1_572_864.0), "1.50 MB");
         assert_eq!(apdex_rating(0.99), "excellent");
         assert_eq!(apdex_rating(0.2), "unacceptable");
+    }
+
+    fn summary_with(failures: u64, successes: u64, error: Option<&str>) -> RunSummary {
+        RunSummary {
+            histogram: Histogram::<u64>::new(3).unwrap(),
+            service_histogram: Histogram::<u64>::new(3).unwrap(),
+            status_counts: HashMap::new(),
+            error_counts: error
+                .map(|message| HashMap::from([(message.to_string(), failures)]))
+                .unwrap_or_default(),
+            assertion_failures: 0,
+            successes,
+            failures,
+            measured_requests: successes + failures,
+            bytes_sent: 0,
+            bytes_received: 0,
+            duration: Duration::from_secs(1),
+            open_loop: false,
+            interrupted: false,
+        }
+    }
+
+    #[test]
+    fn failure_hint_points_at_the_likely_cause() {
+        let refused = summary_with(90, 10, Some("Connection Refused: tcp connect error"));
+
+        assert!(failure_hint(&refused).unwrap().contains("90%"));
+        assert!(failure_hint(&refused).unwrap().contains("server running"));
+
+        let statuses = summary_with(80, 20, None);
+
+        assert!(failure_hint(&statuses).unwrap().contains("--expect-status"));
+    }
+
+    #[test]
+    fn failure_hint_stays_quiet_for_healthy_or_tiny_runs() {
+        assert!(failure_hint(&summary_with(5, 95, None)).is_none());
+        assert!(failure_hint(&summary_with(50, 50, None)).is_none());
+        assert!(failure_hint(&summary_with(4, 1, None)).is_none());
     }
 
     #[test]
