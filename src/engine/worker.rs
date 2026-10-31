@@ -3,7 +3,7 @@ use crate::payload::generator::PayloadTemplate;
 use hdrhistogram::Histogram;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinError;
@@ -139,7 +139,15 @@ struct PhaseConfig {
     start_time: Instant,
 }
 
-/// Per-worker accumulators, merged by the caller after the phase ends.
+/// Accumulators for one *shard* of workers, merged by the caller after the
+/// phase ends.
+///
+/// Workers share a small, fixed number of shards (about twice the CPU
+/// count) instead of owning private histograms: an HdrHistogram grows with
+/// the latencies it sees (130 KB per worker pair at 300 ms), so per-worker
+/// histograms made memory proportional to the number of workers. Recording
+/// takes a lock that is held for a few hundred nanoseconds and is almost
+/// never contended, because workers are spread across the shards.
 struct LocalStats {
     histogram: Histogram<u64>,
     service_histogram: Histogram<u64>,
@@ -150,8 +158,8 @@ struct LocalStats {
 
 impl LocalStats {
     fn new() -> Self {
-        // Auto-resizing histograms start tiny, which keeps thousands of
-        // workers cheap (a fixed 24-hour range cost ~0.25 MB per worker).
+        // Auto-resizing histograms start tiny and only grow to the range of
+        // the latencies actually observed.
         let histogram = || {
             Histogram::<u64>::new(3).expect("3 significant figures is a valid histogram precision")
         };
@@ -181,11 +189,17 @@ fn record_result(
     response_time: Duration,
     is_warmup: bool,
     shared: &SharedMetrics,
-    stats: &mut LocalStats,
+    shard: &Mutex<LocalStats>,
 ) {
     if is_warmup {
         return;
     }
+
+    // A poisoned lock only means another worker panicked mid-update; the
+    // counters are still usable, so keep measuring.
+    let mut stats = shard
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
 
     shared.measured_requests.fetch_add(1, Ordering::Relaxed);
 
@@ -367,7 +381,7 @@ async fn worker_loop(
     shared: &SharedMetrics,
     csv_tx: Option<mpsc::Sender<CsvRecord>>,
     start_time: Instant,
-    stats: &mut LocalStats,
+    stats: &Mutex<LocalStats>,
 ) {
     let mut payload_buffer = Vec::with_capacity(1024);
 
@@ -436,9 +450,20 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
 
     let (job_tx, job_rx) = async_channel::bounded::<Job>(workers.max(1) as usize);
 
+    let parallelism = std::thread::available_parallelism().map_or(2, |count| count.get());
+
+    let shard_count = (workers as usize).min(parallelism * 2).max(1);
+
+    let shards: Arc<Vec<Mutex<LocalStats>>> = Arc::new(
+        (0..shard_count)
+            .map(|_| Mutex::new(LocalStats::new()))
+            .collect(),
+    );
+
     let mut handles = Vec::with_capacity(workers as usize);
 
-    for _ in 0..workers {
+    for worker_index in 0..workers as usize {
+        let shards = shards.clone();
         let template = template.clone();
         let rx = job_rx.clone();
         let target = target.clone();
@@ -446,18 +471,16 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
         let csv_tx = csv_tx.clone();
 
         handles.push(tokio::spawn(async move {
-            let mut stats = LocalStats::new();
+            let stats = &shards[worker_index % shards.len()];
 
             // A single `select!` per worker (not per request) keeps the hot
             // path free of cancellation overhead. When cancelled, the loop
             // (and the request in flight) is dropped; `stats` keeps
             // everything recorded so far.
             tokio::select! {
-                _ = worker_loop(rx, template, target, &shared, csv_tx, start_time, &mut stats) => {}
+                _ = worker_loop(rx, template, target, &shared, csv_tx, start_time, stats) => {}
                 _ = shared.cancelled() => {}
             }
-
-            stats.into_result()
         }));
     }
 
@@ -472,11 +495,22 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
 
     drop(job_tx);
 
-    let mut results = Vec::with_capacity(handles.len());
-
     for handle in handles {
-        results.push(handle.await?);
+        handle.await?;
     }
+
+    // One result per shard. Every worker task has finished, so nothing else
+    // touches the shards any more.
+    let results = shards
+        .iter()
+        .map(|shard| {
+            let mut stats = shard
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+            std::mem::replace(&mut *stats, LocalStats::new()).into_result()
+        })
+        .collect();
 
     Ok(results)
 }

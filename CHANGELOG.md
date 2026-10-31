@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🔄 Changed
 
+- **Memory with many workers:** latency histograms are now shared by groups of workers (about twice the CPU count) instead of owned by each worker. A run with 5 000 workers peaked at 1.35 GB before and ~410 MB now; memory for histograms no longer grows with the number of workers. Precision is unchanged (3 significant figures). `run_workers` now returns one result per shard rather than per worker.
 - Scripts renamed: `long-runing.sh` → `long-running.sh`, `profile-tcp-scalling.sh` → `profile-tcp-scaling.sh`; `benchmark-results/` is git-ignored.
 - README documents `{{timestamp}}` (milliseconds), `{{seq}}` and the range of `{{number}}`; the TCP benchmark note explains the framing change.
 - The HTML dashboard embeds Chart.js 4.4.1 (MIT), so it works offline and no longer depends on an unpinned CDN script.
