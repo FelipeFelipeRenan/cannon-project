@@ -660,6 +660,9 @@ fn tcp_server_dying_mid_run_does_not_hang_cannon() {
     let address = start_dying_tcp_server(3);
     let report = temp_path("tcp-dead.json");
 
+    // Windows can take a full connect timeout to refuse each reconnect
+    // attempt, so the run is kept short and the bound generous: the test
+    // proves that Cannon finishes, not that it finishes quickly.
     let started = Instant::now();
 
     let _ = run_cannon(&[
@@ -668,7 +671,7 @@ fn tcp_server_dying_mid_run_does_not_hang_cannon() {
         "-u",
         &address,
         "-c",
-        "200",
+        "30",
         "-w",
         "2",
         "--body",
@@ -682,14 +685,14 @@ fn tcp_server_dying_mid_run_does_not_hang_cannon() {
     ]);
 
     assert!(
-        started.elapsed() < Duration::from_secs(15),
+        started.elapsed() < Duration::from_secs(40),
         "cannon hung after the server died"
     );
 
     let json = read_json(&report);
 
     assert!(json["successes"].as_u64().unwrap() >= 1);
-    assert!(json["failures"].as_u64().unwrap() > 100);
+    assert!(json["failures"].as_u64().unwrap() > 15);
 
     let _ = std::fs::remove_file(report);
 }
