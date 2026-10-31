@@ -1012,8 +1012,23 @@ mod tests {
             "tcp connect error: Connection refused (os error 111)"
         )
         .starts_with("Connection Refused"));
-        assert!(describe(false, false, true, Some(24), "tcp connect error")
-            .starts_with("File Descriptor Limit"));
+        // errno 24 is EMFILE only on Unix; elsewhere it must not be guessed.
+        let by_code = describe(false, false, true, Some(24), "tcp connect error");
+
+        if cfg!(unix) {
+            assert!(by_code.starts_with("File Descriptor Limit"));
+        } else {
+            assert!(by_code.starts_with("Connect Error"));
+        }
+
+        assert!(describe(
+            false,
+            false,
+            true,
+            None,
+            "Too many open files (os error 24)"
+        )
+        .starts_with("File Descriptor Limit"));
         assert!(describe(false, false, false, None, "boom").starts_with("Network Error"));
     }
 }

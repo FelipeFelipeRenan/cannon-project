@@ -297,6 +297,13 @@ pub struct Args {
     // ─────────────────────────────────────────────────────────────────────
     // Runtime
     // ─────────────────────────────────────────────────────────────────────
+    /// Ignore HTTP_PROXY / HTTPS_PROXY / ALL_PROXY and connect directly.
+    ///
+    /// By default Cannon honours the proxy environment variables, in which
+    /// case the proxy is part of what is being measured.
+    #[arg(long, help_heading = "Request")]
+    pub no_proxy: bool,
+
     /// Pin Tokio worker threads to CPU cores.
     ///
     /// Useful when reducing scheduler migration and CPU placement
@@ -421,6 +428,7 @@ impl Args {
 /// The application combines this configuration with command-line arguments
 /// before starting the load test.
 #[derive(Deserialize, Debug, Default)]
+#[serde(deny_unknown_fields)]
 pub struct FileConfig {
     /// Target URL or TCP address.
     pub url: Option<String>,
@@ -502,6 +510,9 @@ pub struct FileConfig {
 
     /// TCP mode: response delimiter.
     pub tcp_read_until: Option<String>,
+
+    /// Ignore proxy environment variables.
+    pub no_proxy: Option<bool>,
 
     /// Pin Tokio worker threads to CPU cores.
     pub pin_threads: Option<bool>,

@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🚀 Added
 
+- `--no-proxy` (CLI and YAML), plus a warning when `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` is set, since the proxy would be part of what is measured.
+- `rust-version = "1.88"` in `Cargo.toml` and a CI job that checks the build with it.
 - On Unix, Cannon raises the open-file soft limit to the hard limit at startup and warns when `--workers` still would not fit.
 - `--tcp-read-bytes`, `--tcp-read-until` (CLI and YAML) and `Target::new_tcp_with_options` / `TcpRead`.
 - `--max-error-rate` (CLI and YAML) and error-rate data in baseline files (older baselines still load).
@@ -38,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🔄 Changed
 
+- The HTML dashboard embeds Chart.js 4.4.1 (MIT), so it works offline and no longer depends on an unpinned CDN script.
+- Unknown keys in the YAML config file are now an error (a typo such as `worker:` used to be ignored silently).
 - Redesigned terminal report: one-line verdict, sections (latency, status codes, failures, throughput), human-readable durations and sizes, and an Apdex rating.
 - Removed the unused `rand`, `uuid` and `async-trait` dependencies (`uuid` was what raised the minimum Rust version).
 - Latency histograms/percentiles now contain **successful requests only**; failures appear in counters and the error breakdown. Apdex counts failed requests as frustrated.

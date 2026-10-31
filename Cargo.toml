@@ -2,6 +2,7 @@
 name = "cannon"
 version = "2.2.0"
 edition = "2021"
+rust-version = "1.88"
 description = "High-performance load testing for HTTP and raw TCP services"
 readme = "README.md"
 repository = "https://github.com/FelipeFelipeRenan/cannon-project"

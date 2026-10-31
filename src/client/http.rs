@@ -24,6 +24,10 @@ pub fn build_optimized_client(args: &Args) -> Result<Client, reqwest::Error> {
         .connect_timeout(Duration::from_millis(args.connect_timeout))
         .timeout(Duration::from_millis(args.timeout));
 
+    if args.no_proxy {
+        builder = builder.no_proxy();
+    }
+
     if args.insecure {
         builder = builder.danger_accept_invalid_certs(true);
     }

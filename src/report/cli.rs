@@ -311,7 +311,12 @@ pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()
         .replace('\u{2028}', "\\u2028")
         .replace('\u{2029}', "\\u2029");
 
-    let final_html = template.replace("/*JSON_PAYLOAD*/", &safe_json);
+    // Chart.js 4.4.1 is embedded so the dashboard works offline and cannot
+    // change under us (see assets/chart.js.LICENSE.md). It is substituted
+    // before the report data so that data can never be mistaken for a marker.
+    let final_html = template
+        .replace("/*CHARTJS*/", include_str!("../../assets/chart.umd.js"))
+        .replace("/*JSON_PAYLOAD*/", &safe_json);
 
     std::fs::write(path, final_html)?;
     Ok(())
@@ -710,6 +715,21 @@ mod tests {
         assert_eq!(percentile_label(0.07), "p7");
         assert_eq!(percentile_label(0.57), "p57");
         assert_eq!(percentile_label(1.0), "p100");
+    }
+
+    #[test]
+    fn html_report_is_self_contained() {
+        let path = std::env::temp_dir().join(format!("cannon-offline-{}.html", std::process::id()));
+
+        generate_html_report(path.to_str().unwrap(), "{}").unwrap();
+
+        let html = std::fs::read_to_string(&path).unwrap();
+
+        assert!(!html.contains("cdn.jsdelivr"), "no external script allowed");
+        assert!(!html.contains("/*CHARTJS*/"));
+        assert!(html.contains("Chart"));
+
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
