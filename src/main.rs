@@ -43,6 +43,26 @@ fn run() -> AppResult<ExitCode> {
     args.validate()
         .map_err(|error| format!("invalid configuration: {error}"))?;
 
+    if !args.no_proxy && !args.mode.eq_ignore_ascii_case("tcp") {
+        let proxy = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"]
+            .iter()
+            .find_map(|name| {
+                std::env::var(name)
+                    .ok()
+                    .or_else(|| std::env::var(name.to_lowercase()).ok())
+                    .filter(|value| !value.is_empty())
+                    .map(|_| *name)
+            });
+
+        if let Some(name) = proxy {
+            eprintln!(
+                "{} {name} is set: requests may go through a proxy, which then becomes part of \
+                 what is measured (use --no-proxy to connect directly)",
+                "⚠️ ".yellow()
+            );
+        }
+    }
+
     if let Some(limit) = raise_fd_limit() {
         // Each worker may hold a socket, plus a few descriptors for files.
         if u64::from(args.workers) + 64 > limit {

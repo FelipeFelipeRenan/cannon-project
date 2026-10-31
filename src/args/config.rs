@@ -149,6 +149,12 @@ pub fn merge_with_yaml(
             }
         }
 
+        if let Some(no_proxy) = conf.no_proxy {
+            if !was_provided_by_cli(matches, "no_proxy") {
+                args.no_proxy = no_proxy;
+            }
+        }
+
         if let Some(pin_threads) = conf.pin_threads {
             if !was_provided_by_cli(matches, "pin_threads") {
                 args.pin_threads = pin_threads;
@@ -378,6 +384,7 @@ compare_baseline: c.json
 tolerance: 7.5
 max_error_rate: 1.5
 pin_threads: true
+no_proxy: true
 "#,
         );
 
@@ -388,7 +395,22 @@ pin_threads: true
         assert_eq!(args.workers, 3);
         assert_eq!(args.count, 7);
         assert_eq!(args.tolerance, 7.5);
-        assert!(args.pin_threads && args.http2 && args.insecure);
+        assert!(args.pin_threads && args.http2 && args.insecure && args.no_proxy);
+
+        fs::remove_file(config_path).unwrap();
+    }
+
+    #[test]
+    fn unknown_yaml_keys_are_reported() {
+        let config_path = write_temp_config("worker: 50\n");
+
+        let (mut args, matches) = parse_args(&["--config", &config_path]);
+
+        let error = merge_with_yaml(&mut args, &matches)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("worker"), "{error}");
 
         fs::remove_file(config_path).unwrap();
     }

@@ -85,6 +85,23 @@ jobs:
       - name: Run documentation tests
         run: cargo test --locked --doc
 
+  msrv:
+    name: MSRV (1.88)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@1.88.0
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check with the minimum supported Rust version
+        run: cargo check --locked --all-targets
+
   docs:
     name: Documentation
     runs-on: ubuntu-latest
