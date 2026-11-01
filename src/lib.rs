@@ -19,6 +19,7 @@
 //! executable.
 
 #![warn(missing_docs)]
+pub mod app;
 pub mod args;
 pub mod client;
 pub mod engine;
