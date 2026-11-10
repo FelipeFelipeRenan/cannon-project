@@ -4,6 +4,7 @@ use std::time::Duration;
 use colored::Colorize;
 use hdrhistogram::Histogram;
 use serde::Serialize;
+use std::borrow::Cow;
 use tabled::Tabled;
 
 use super::summary::{histogram_percentile_ms, RunSummary};
@@ -188,13 +189,26 @@ impl FinalReport {
 ///
 /// `LatencyMetrics` is used internally by the CLI reporter to transform
 /// numerical latency measurements into rows suitable for [`tabled`].
-#[derive(Tabled)]
 pub struct LatencyMetrics {
     /// Human-readable name of the latency metric.
     pub metric: String,
 
     /// Formatted value displayed for the metric.
     pub value: String,
+}
+
+// Implemented by hand: the `derive` feature pulls in `proc-macro-error2`,
+// which the compiler already flags as incompatible with a future Rust.
+impl Tabled for LatencyMetrics {
+    const LENGTH: usize = 2;
+
+    fn fields(&self) -> Vec<Cow<'_, str>> {
+        vec![Cow::Borrowed(&self.metric), Cow::Borrowed(&self.value)]
+    }
+
+    fn headers() -> Vec<Cow<'static, str>> {
+        vec![Cow::Borrowed("metric"), Cow::Borrowed("value")]
+    }
 }
 
 /// Formats a latency quantile (`0.0..=1.0`) as a short label such as `p99`
