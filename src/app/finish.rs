@@ -29,6 +29,7 @@ pub fn finish(args: &Args, plan: &RunPlan, completed: Completed) -> AppResult<Ex
         duration,
         metrics,
         interrupted_status,
+        aborted,
     } = completed;
 
     let summary = RunSummary::aggregate(worker_results, &metrics, duration, args.rps.is_some())?;
@@ -89,6 +90,13 @@ pub fn finish(args: &Args, plan: &RunPlan, completed: Completed) -> AppResult<Ex
             }
             Err(reason) => gate_failures.push(format!("❌ Baseline not saved: {reason}")),
         }
+    }
+
+    if let Some(reason) = aborted {
+        println!("\n{}", reason.red().bold());
+        eprintln!("{} test aborted early", "error:".red().bold());
+
+        return Ok(ExitCode::from(EXIT_GATE_FAILED));
     }
 
     if let Some(status) = interrupted_status {

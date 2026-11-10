@@ -24,9 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Assertion accounting:** network/transport errors were counted as "assertion failures" even without `--expect`. `--expect` is now also evaluated against non-UTF-8 bodies instead of silently passing.
 - **Percentile labels:** floating-point noise no longer leaks into labels (for example `p7.000000000000001`).
 - Removed avoidable panics reachable from user input (missing TCP address, CPU topology failure, histogram bounds).
+- **Worker panics:** a panic in one worker no longer takes the whole run down (`panic = "abort"` removed); it is reported as an `Internal Error` and counted as a failure.
+- **Partial output files:** JSON/CSV/baseline files are written atomically (temp file + rename), so an interrupted run never leaves a truncated file.
+- **TCP reconnect storms:** when the server is down, reconnects now back off exponentially (shared across workers) instead of hammering it.
+- **Gate reliability:** the gate notes when there are too few samples (< 1000) for a trustworthy p99.
+- Removed the `proc-macro-error2` dependency chain (`tabled` derive).
 
 ### 🚀 Added
 
+- `--abort-on-error-rate <PERCENT>`: stops the run early (exit code 2) when the error rate of the first requests exceeds the limit.
+- A warning is printed when a paced run (`--rps`) cannot sustain its target rate; JSON reports include `target_rate_sustained`.
 - A hint is printed when more than half of the requests fail, pointing at the most likely cause (refused connection, DNS, TLS, timeouts, descriptor limit, TCP framing, unexpected status codes).
 - Seeded fuzz tests for the payload, status-filter, delimiter and baseline parsers, and a test that `{{email}}`/`{{username}}` do not collide over 200 000 values.
 - `--max-redirects N` to follow redirects (default 0), `--expect-status` to define which status codes count as success (`200,404`, `2xx`), `--cacert` for private CAs, `--cert`/`--key` for mutual TLS and `--no-color` (all also available in YAML).

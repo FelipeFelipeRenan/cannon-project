@@ -114,6 +114,12 @@ pub struct FinalReport {
     /// Configured request rate, if the load was paced.
     pub target_rps: Option<u32>,
 
+    /// Whether a paced run delivered at least 95% of the target rate.
+    ///
+    /// `false` means Cannon itself was the limit and the latencies include
+    /// time spent queued inside it; `null` when not applicable.
+    pub target_rate_sustained: Option<bool>,
+
     /// Requests per second actually achieved during the measurement phase.
     pub actual_rps: f64,
 
@@ -168,6 +174,7 @@ impl FinalReport {
             latency: LatencyStats::from_histogram(&summary.histogram),
             service_time: LatencyStats::from_histogram(&summary.service_histogram),
             target_rps,
+            target_rate_sustained: summary.target_rate_sustained(target_rps),
             actual_rps: summary.actual_rps(),
             bytes_sent: summary.bytes_sent,
             bytes_received: summary.bytes_received,
@@ -397,6 +404,10 @@ pub fn print_summary(
             .bold()
     );
 
+    if let Some(warning) = saturation_warning(summary, target_rps) {
+        println!("\n{}", warning.red().bold());
+    }
+
     if let Some(hint) = failure_hint(summary) {
         println!("\n{}", format!("💡 {hint}").yellow());
     }
@@ -546,6 +557,28 @@ pub fn print_summary(
         "\n{}",
         format!("Finished in {}", format_duration(summary.duration)).bright_black()
     );
+}
+
+/// Warns when a paced run could not deliver its target rate.
+///
+/// In that case the measured latencies include the time requests waited
+/// inside Cannon, so they must not be read as the server's latency.
+fn saturation_warning(summary: &RunSummary, target_rps: Option<u32>) -> Option<String> {
+    if summary.target_rate_sustained(target_rps)? {
+        return None;
+    }
+
+    let target = target_rps?;
+
+    Some(format!(
+        "🚨 Cannon could not sustain {target} req/s: it delivered {:.0}% of the target \
+         (requests waited {:.1} ms inside Cannon on average). Either every worker was busy \
+         (raise --workers) or this machine is the limit (lower --rps). \
+         The latencies below include that waiting and do NOT describe the server alone; \
+         the service time is in the JSON report.",
+        summary.actual_rps() / f64::from(target.max(1)) * 100.0,
+        summary.mean_queue_delay_ms()
+    ))
 }
 
 /// Suggests a likely cause when most requests failed.
@@ -793,6 +826,21 @@ mod tests {
         let statuses = summary_with(80, 20, None);
 
         assert!(failure_hint(&statuses).unwrap().contains("--expect-status"));
+    }
+
+    #[test]
+    fn saturation_warning_appears_only_when_the_rate_was_missed() {
+        let mut paced = summary_with(0, 200, None);
+
+        paced.open_loop = true;
+        paced.duration = Duration::from_secs(2);
+
+        assert!(saturation_warning(&paced, Some(100)).is_none());
+
+        let warning = saturation_warning(&paced, Some(1_000)).unwrap();
+
+        assert!(warning.contains("1000 req/s") && warning.contains("NOT describe"));
+        assert!(saturation_warning(&paced, None).is_none());
     }
 
     #[test]

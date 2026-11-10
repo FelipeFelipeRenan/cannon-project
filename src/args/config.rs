@@ -185,6 +185,12 @@ pub fn merge_with_yaml(
             }
         }
 
+        if let Some(value) = conf.abort_on_error_rate {
+            if !was_provided_by_cli(matches, "abort_on_error_rate") {
+                args.abort_on_error_rate = Some(value);
+            }
+        }
+
         if let Some(no_proxy) = conf.no_proxy {
             if !was_provided_by_cli(matches, "no_proxy") {
                 args.no_proxy = no_proxy;

@@ -268,6 +268,10 @@ is the error rate stored in the baseline; set it explicitly with
 `--max-error-rate <PERCENT>`. A run without any successful request always
 fails the gate, and a baseline cannot be saved from such a run.
 
+To stop early instead of waiting for the whole run, use
+`--abort-on-error-rate <PERCENT>`: once at least 20 requests were measured and
+the error rate exceeds the limit, the test is cancelled and exits with status 2.
+
 ---
 
 # 📊 What Cannon Measures

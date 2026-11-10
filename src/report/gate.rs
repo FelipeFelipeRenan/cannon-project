@@ -80,6 +80,9 @@ impl Baseline {
     }
 }
 
+/// Below this many successful requests a p99 is just "one of the slowest few".
+const MIN_SAMPLES_FOR_P99: u64 = 1_000;
+
 /// Thresholds applied by [`evaluate`].
 #[derive(Debug, Clone, Copy)]
 pub struct GateOptions {
@@ -165,6 +168,15 @@ fn compare_latency(
         }
     }
 
+    if summary.successes < MIN_SAMPLES_FOR_P99 {
+        outcome.notes.push(format!(
+            "⚠️ The p99 comes from only {} successful requests; with fewer than \
+             {MIN_SAMPLES_FOR_P99} it is dominated by a handful of samples and the gate \
+             may be flaky. Send more requests (-c) for a reliable comparison.",
+            summary.successes
+        ));
+    }
+
     let current = summary.percentile_ms(0.99);
 
     if current > baseline.p99_ms {
@@ -245,7 +257,10 @@ mod tests {
         let outcome = evaluate(&summary(105, 100, 0), Some(&baseline(100.0, 0.0)), &OPTIONS);
 
         assert!(outcome.passed(), "{outcome:?}");
-        assert!(outcome.notes[0].contains("degradation"));
+        assert!(outcome
+            .notes
+            .iter()
+            .any(|note| note.contains("degradation")));
     }
 
     #[test]
@@ -258,11 +273,29 @@ mod tests {
     }
 
     #[test]
+    fn few_samples_produce_a_reliability_note() {
+        let few = evaluate(&summary(100, 50, 0), Some(&baseline(100.0, 0.0)), &OPTIONS);
+
+        assert!(few.notes.iter().any(|note| note.contains("only 50")));
+
+        let many = evaluate(
+            &summary(100, 2_000, 0),
+            Some(&baseline(100.0, 0.0)),
+            &OPTIONS,
+        );
+
+        assert!(!many.notes.iter().any(|note| note.contains("only")));
+    }
+
+    #[test]
     fn improvement_passes() {
         let outcome = evaluate(&summary(50, 100, 0), Some(&baseline(100.0, 0.0)), &OPTIONS);
 
         assert!(outcome.passed());
-        assert!(outcome.notes[0].contains("improvement"));
+        assert!(outcome
+            .notes
+            .iter()
+            .any(|note| note.contains("improvement")));
     }
 
     #[test]
