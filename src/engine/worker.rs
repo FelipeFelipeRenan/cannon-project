@@ -648,9 +648,25 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
         (0..shards.len()).map(|_| WorkerCounts::default()).collect();
 
     for (worker_index, handle) in handles.into_iter().enumerate() {
-        handle
-            .await?
-            .merge_into(&mut shard_counts[worker_index % shards.len()]);
+        let counts = &mut shard_counts[worker_index % shards.len()];
+
+        match handle.await {
+            Ok(worker_counts) => worker_counts.merge_into(counts),
+            Err(_) => {
+                // A panicking worker must not throw away what everybody else
+                // measured: count it as a failure and keep going. (The panic
+                // message itself has already been printed by the runtime.)
+                *counts
+                    .error_counts
+                    .entry("Internal Error: a worker task panicked".to_string())
+                    .or_insert(0) += 1;
+
+                shared_metrics.failures.fetch_add(1, Ordering::Relaxed);
+                shared_metrics
+                    .measured_requests
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+        }
     }
 
     // One result per shard. Every worker task has finished, so the

@@ -29,6 +29,7 @@ pub fn finish(args: &Args, plan: &RunPlan, completed: Completed) -> AppResult<Ex
         duration,
         metrics,
         interrupted_status,
+        aborted,
     } = completed;
 
     let summary = RunSummary::aggregate(worker_results, &metrics, duration, args.rps.is_some())?;
@@ -56,7 +57,7 @@ pub fn finish(args: &Args, plan: &RunPlan, completed: Completed) -> AppResult<Ex
         let json_data = serde_json::to_string_pretty(&report)?;
 
         if let Some(path) = &args.output {
-            std::fs::write(path, &json_data)
+            write_atomic(path, json_data.as_bytes())
                 .map_err(|error| format!("cannot write JSON report '{path}': {error}"))?;
             println!(
                 "📂 JSON report saved successfully to {}!",
@@ -79,7 +80,7 @@ pub fn finish(args: &Args, plan: &RunPlan, completed: Completed) -> AppResult<Ex
     if let Some(path) = &args.save_baseline {
         match Baseline::from_summary(&summary) {
             Ok(baseline) => {
-                std::fs::write(path, serde_json::to_string_pretty(&baseline)?)
+                write_atomic(path, serde_json::to_string_pretty(&baseline)?.as_bytes())
                     .map_err(|error| format!("cannot write baseline '{path}': {error}"))?;
 
                 println!(
@@ -89,6 +90,13 @@ pub fn finish(args: &Args, plan: &RunPlan, completed: Completed) -> AppResult<Ex
             }
             Err(reason) => gate_failures.push(format!("❌ Baseline not saved: {reason}")),
         }
+    }
+
+    if let Some(reason) = aborted {
+        println!("\n{}", reason.red().bold());
+        eprintln!("{} test aborted early", "error:".red().bold());
+
+        return Ok(ExitCode::from(EXIT_GATE_FAILED));
     }
 
     if let Some(status) = interrupted_status {
@@ -123,4 +131,43 @@ pub fn finish(args: &Args, plan: &RunPlan, completed: Completed) -> AppResult<Ex
     eprintln!("{} performance gate failed", "error:".red().bold());
 
     Ok(ExitCode::from(EXIT_GATE_FAILED))
+}
+
+/// Writes a file so that readers (and a crash) never see a half-written one:
+/// the contents go to a temporary file next to the target, which is then
+/// renamed over it. This matters for baselines, which CI compares against.
+fn write_atomic(path: &str, contents: &[u8]) -> std::io::Result<()> {
+    let temporary = format!("{path}.tmp-{}", std::process::id());
+
+    let result =
+        std::fs::write(&temporary, contents).and_then(|()| std::fs::rename(&temporary, path));
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::write_atomic;
+
+    #[test]
+    fn atomic_write_replaces_the_file_and_leaves_no_temporary() {
+        let dir = std::env::temp_dir().join(format!("cannon-atomic-{}", std::process::id()));
+
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let path = dir.join("baseline.json");
+        let path = path.to_str().unwrap();
+
+        write_atomic(path, b"first").unwrap();
+        write_atomic(path, b"second").unwrap();
+
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "second");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

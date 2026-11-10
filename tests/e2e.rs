@@ -1243,3 +1243,88 @@ fn tls_files_are_validated_before_the_run() {
 
     assert_ne!(half.status.code(), Some(0), "--cert needs --key");
 }
+
+#[test]
+fn abort_on_error_rate_stops_a_test_against_a_dead_target() {
+    let started = Instant::now();
+
+    let output = run_cannon(&[
+        "-u",
+        &unused_port_url(),
+        "-c",
+        "5000000",
+        "-w",
+        "4",
+        "--abort-on-error-rate",
+        "50",
+        "--no-color",
+    ]);
+
+    let combined = format!("{}{}", stdout(&output), stderr(&output));
+
+    assert_eq!(output.status.code(), Some(2), "{combined}");
+    assert!(combined.contains("Aborted"), "{combined}");
+    assert!(started.elapsed() < Duration::from_secs(20));
+}
+
+#[test]
+fn a_paced_run_that_misses_its_rate_says_so() {
+    // 1 worker against a server that takes ~100 ms can do ~10 req/s, far
+    // below the requested 200.
+    let address = start_http_server_with_delay(Duration::from_millis(100));
+    let report = temp_path("saturated.json");
+
+    let output = run_cannon(&[
+        "-u",
+        &format!("http://{address}/"),
+        "-c",
+        "150",
+        "-w",
+        "1",
+        "--rps",
+        "200",
+        "--no-color",
+        "-o",
+        report.to_str().unwrap(),
+    ]);
+
+    assert!(stdout(&output).contains("could not sustain 200 req/s"));
+    assert_eq!(read_json(&report)["target_rate_sustained"], false);
+
+    let _ = std::fs::remove_file(report);
+}
+
+/// An HTTP server that answers every request with `200 ok` after `delay`.
+fn start_http_server_with_delay(delay: Duration) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+
+    thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            thread::spawn(move || {
+                let mut buffer = [0u8; 8192];
+                let mut pending = Vec::new();
+
+                loop {
+                    match stream.read(&mut buffer) {
+                        Ok(0) | Err(_) => return,
+                        Ok(read) => pending.extend_from_slice(&buffer[..read]),
+                    }
+
+                    while let Some(end) = find_head_end(&pending) {
+                        pending.drain(..end);
+                        thread::sleep(delay);
+
+                        let response = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+
+                        if stream.write_all(response.as_bytes()).is_err() {
+                            return;
+                        }
+                    }
+                }
+            });
+        }
+    });
+
+    address
+}

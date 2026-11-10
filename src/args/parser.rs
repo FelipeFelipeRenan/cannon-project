@@ -323,6 +323,13 @@ pub struct Args {
     #[arg(long, value_name = "PERCENT", help_heading = "Baselines")]
     pub max_error_rate: Option<f64>,
 
+    /// Stop the test early (exit status 2) when more than this percentage of
+    /// requests fail, instead of spending the whole run on a dead target.
+    ///
+    /// Only evaluated after at least 20 measured requests.
+    #[arg(long, value_name = "PERCENT", help_heading = "Baselines")]
+    pub abort_on_error_rate: Option<f64>,
+
     // ─────────────────────────────────────────────────────────────────────
     // Runtime
     // ─────────────────────────────────────────────────────────────────────
@@ -427,6 +434,14 @@ impl Args {
 
         if self.tolerance.is_nan() || self.tolerance < 0.0 {
             return Err("tolerance must be greater than or equal to 0".to_string());
+        }
+
+        if let Some(rate) = self.abort_on_error_rate {
+            if !(rate > 0.0 && rate <= 100.0) {
+                return Err(
+                    "abort-on-error-rate must be greater than 0 and at most 100".to_string()
+                );
+            }
         }
 
         if let Some(rate) = self.max_error_rate {
@@ -541,6 +556,9 @@ pub struct FileConfig {
 
     /// Maximum allowed percentage of failed requests.
     pub max_error_rate: Option<f64>,
+
+    /// Stop early when this percentage of requests fail.
+    pub abort_on_error_rate: Option<f64>,
 
     /// TCP mode: bytes in each response.
     pub tcp_read_bytes: Option<usize>,

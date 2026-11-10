@@ -126,7 +126,67 @@ pub enum Target {
 
         /// How the end of a response is recognised.
         read: TcpRead,
+
+        /// Spaces out reconnection attempts to a target that is down.
+        backoff: Arc<Backoff>,
     },
+}
+
+/// Exponential back-off (100 ms doubling up to 5 s, with jitter) shared by
+/// every connection slot of a TCP target.
+///
+/// It turns "the server is down" into a trickle of reconnection attempts
+/// instead of one per worker per request, which would keep a recovering
+/// server down.
+pub struct Backoff {
+    started: std::time::Instant,
+    failures: std::sync::atomic::AtomicU32,
+    retry_at_ms: std::sync::atomic::AtomicU64,
+}
+
+impl Backoff {
+    const BASE_MS: u64 = 100;
+    const MAX_MS: u64 = 5_000;
+
+    fn new() -> Self {
+        Self {
+            started: std::time::Instant::now(),
+            failures: std::sync::atomic::AtomicU32::new(0),
+            retry_at_ms: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+
+    fn now_ms(&self) -> u64 {
+        self.started.elapsed().as_millis() as u64
+    }
+
+    /// Time left before another connection attempt is allowed.
+    fn remaining(&self) -> Option<Duration> {
+        let retry_at = self.retry_at_ms.load(std::sync::atomic::Ordering::Relaxed);
+
+        retry_at
+            .checked_sub(self.now_ms())
+            .filter(|left| *left > 0)
+            .map(Duration::from_millis)
+    }
+
+    fn failed(&self) {
+        use std::sync::atomic::Ordering::Relaxed;
+
+        let failures = self.failures.fetch_add(1, Relaxed).min(16);
+        let delay = (Self::BASE_MS << failures).min(Self::MAX_MS);
+        let jitter = fastrand::u64(0..=delay / 4);
+
+        self.retry_at_ms
+            .store(self.now_ms() + delay + jitter, Relaxed);
+    }
+
+    fn succeeded(&self) {
+        use std::sync::atomic::Ordering::Relaxed;
+
+        self.failures.store(0, Relaxed);
+        self.retry_at_ms.store(0, Relaxed);
+    }
 }
 
 /// How Cannon recognises the end of a response in raw TCP mode.
@@ -295,6 +355,7 @@ impl Target {
             connect_timeout,
             request_timeout,
             read,
+            backoff: Arc::new(Backoff::new()),
         })
     }
 
@@ -489,6 +550,7 @@ impl Target {
                 connect_timeout,
                 request_timeout,
                 read,
+                backoff,
             } => {
                 let Ok(slot) = pool_rx.recv().await else {
                     return TargetResult::fail(start.elapsed(), "TCP Pool Closed".to_string());
@@ -498,20 +560,40 @@ impl Target {
                 // for one can never block forever.
                 let mut conn = match slot {
                     Some(conn) => conn,
-                    None => match Self::connect(address, *connect_timeout).await {
-                        Ok(stream) => TcpConn {
-                            stream,
-                            requests: 0,
-                        },
-                        Err(error) => {
+                    None => {
+                        // A target that is down must not be hammered by every
+                        // worker reconnecting at once: after a failure, further
+                        // attempts fail fast until the back-off has elapsed.
+                        if let Some(wait) = backoff.remaining() {
                             let _ = pool_tx.send(None).await;
 
                             return TargetResult::fail(
                                 start.elapsed(),
-                                format!("Connect Error: {error}"),
+                                format!("Connect Backoff: not reconnecting for another {wait:?}"),
                             );
                         }
-                    },
+
+                        match Self::connect(address, *connect_timeout).await {
+                            Ok(stream) => {
+                                backoff.succeeded();
+
+                                TcpConn {
+                                    stream,
+                                    requests: 0,
+                                }
+                            }
+                            Err(error) => {
+                                backoff.failed();
+
+                                let _ = pool_tx.send(None).await;
+
+                                return TargetResult::fail(
+                                    start.elapsed(),
+                                    format!("Connect Error: {error}"),
+                                );
+                            }
+                        }
+                    }
                 };
 
                 let round_trip = Self::tcp_round_trip(&mut conn, payload, read);
@@ -1301,5 +1383,29 @@ mod tests {
             result.bytes_received < 5 * 1024 * 1024,
             "reading must stop early"
         );
+    }
+
+    #[test]
+    fn backoff_grows_and_resets() {
+        let backoff = Backoff::new();
+
+        assert!(backoff.remaining().is_none());
+
+        backoff.failed();
+        let first = backoff.remaining().unwrap();
+
+        assert!(first <= Duration::from_millis(125));
+
+        for _ in 0..10 {
+            backoff.failed();
+        }
+
+        // Capped at 5 s (+25% jitter).
+        assert!(backoff.remaining().unwrap() <= Duration::from_millis(6_250));
+        assert!(backoff.remaining().unwrap() > Duration::from_secs(1));
+
+        backoff.succeeded();
+
+        assert!(backoff.remaining().is_none());
     }
 }

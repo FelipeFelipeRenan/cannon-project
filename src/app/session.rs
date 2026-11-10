@@ -24,7 +24,13 @@ pub struct Completed {
     pub metrics: Arc<SharedMetrics>,
     /// Exit status of the signal that interrupted the run, if any.
     pub interrupted_status: Option<u8>,
+    /// Why the run was stopped early by `--abort-on-error-rate`, if it was.
+    pub aborted: Option<String>,
 }
+
+/// `--abort-on-error-rate` is only evaluated after this many requests, so a
+/// couple of early failures cannot stop a healthy test.
+const MIN_REQUESTS_TO_ABORT: u64 = 20;
 
 /// Runs the test described by `args` against `target`.
 ///
@@ -72,6 +78,7 @@ pub async fn run(args: &Args, plan: &RunPlan, target: Arc<Target>) -> AppResult<
     tokio::pin!(shutdown);
 
     let mut interrupted_status: Option<u8> = None;
+    let mut aborted: Option<String> = None;
     let mut ticker = tokio::time::interval(Duration::from_millis(500));
     let mut last_total = 0;
     let mut last_time = Instant::now();
@@ -84,6 +91,23 @@ pub async fn run(args: &Args, plan: &RunPlan, target: Arc<Target>) -> AppResult<
                     + shared_metrics.failures.load(Ordering::Relaxed);
 
                 pb.set_position(total);
+
+                if let (Some(limit), None) = (args.abort_on_error_rate, &aborted) {
+                    let measured = shared_metrics.measured_requests.load(Ordering::Relaxed);
+                    let failed = shared_metrics.failures.load(Ordering::Relaxed);
+
+                    if measured >= MIN_REQUESTS_TO_ABORT
+                        && failed as f64 / measured as f64 * 100.0 > limit
+                    {
+                        aborted = Some(format!(
+                            "❌ Aborted: {:.1}% of the first {measured} requests failed, above \
+                             --abort-on-error-rate {limit}%",
+                            failed as f64 / measured as f64 * 100.0
+                        ));
+
+                        shared_metrics.cancel();
+                    }
+                }
 
                 let elapsed = last_time.elapsed().as_secs_f64();
 
@@ -135,5 +159,6 @@ pub async fn run(args: &Args, plan: &RunPlan, target: Arc<Target>) -> AppResult<
         duration,
         metrics: shared_metrics,
         interrupted_status,
+        aborted,
     })
 }

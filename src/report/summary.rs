@@ -144,6 +144,32 @@ impl RunSummary {
         histogram_percentile_ms(&self.histogram, quantile)
     }
 
+    /// Whether a paced run actually delivered the requested rate.
+    ///
+    /// `None` when the question does not apply (closed-loop runs, no target
+    /// rate) or there are too few requests to tell (under 100). Below 95% of
+    /// the target, Cannon itself — not the server — was the limit: every
+    /// worker was busy, or this machine could not generate the load.
+    pub fn target_rate_sustained(&self, target_rps: Option<u32>) -> Option<bool> {
+        let target = f64::from(target_rps?);
+
+        if !self.open_loop || self.measured_requests < 100 || target <= 0.0 {
+            return None;
+        }
+
+        Some(self.actual_rps() >= target * 0.95)
+    }
+
+    /// Mean time requests spent waiting inside Cannon before being sent, in
+    /// milliseconds (response time minus service time). `0.0` without data.
+    pub fn mean_queue_delay_ms(&self) -> f64 {
+        if self.histogram.is_empty() || self.service_histogram.is_empty() {
+            return 0.0;
+        }
+
+        ((self.histogram.mean() - self.service_histogram.mean()) / 1000.0).max(0.0)
+    }
+
     /// Human-readable name of the latency measurement mode.
     pub fn latency_mode(&self) -> &'static str {
         if self.open_loop {
@@ -257,6 +283,38 @@ mod tests {
         // HdrHistogram keeps 3 significant figures, so allow 0.1% of error.
         assert!((summary(&values, 0).percentile_ms(0.5) - 50.0).abs() < 0.1);
         assert!((summary(&values, 0).percentile_ms(0.99) - 99.0).abs() < 0.2);
+    }
+
+    #[test]
+    fn target_rate_sustained_detects_a_saturated_generator() {
+        let mut paced = summary(&[1_000; 200], 0);
+
+        paced.open_loop = true;
+        paced.duration = Duration::from_secs(2); // 100 req/s achieved
+
+        assert_eq!(paced.target_rate_sustained(Some(100)), Some(true));
+        assert_eq!(paced.target_rate_sustained(Some(150)), Some(false));
+        assert_eq!(paced.target_rate_sustained(None), None);
+
+        // Closed-loop runs and tiny runs cannot be judged.
+        assert_eq!(
+            summary(&[1_000; 200], 0).target_rate_sustained(Some(1)),
+            None
+        );
+        assert_eq!(
+            summary(&[1_000; 10], 0).target_rate_sustained(Some(1)),
+            None
+        );
+    }
+
+    #[test]
+    fn queue_delay_is_response_minus_service_time() {
+        let mut delayed = summary(&[10_000; 10], 0);
+
+        delayed.service_histogram = histogram_of(&[4_000; 10]);
+
+        assert!((delayed.mean_queue_delay_ms() - 6.0).abs() < 0.05);
+        assert_eq!(summary(&[], 0).mean_queue_delay_ms(), 0.0);
     }
 
     #[test]
