@@ -360,6 +360,7 @@ fn ramp_up_flag_works_end_to_end() {
 }
 
 #[test]
+#[cfg(feature = "yaml")]
 fn yaml_config_is_applied_and_cli_overrides_it() {
     let server = HttpServer::start("ok");
     let config = temp_path("config.yml");
@@ -423,6 +424,7 @@ fn csv_export_has_a_header_and_one_row_per_request() {
 }
 
 #[test]
+#[cfg(feature = "html")]
 fn html_report_embeds_the_results() {
     let server = HttpServer::start("ok");
     let html = temp_path("report.html");
@@ -854,6 +856,7 @@ fn ctrl_c_stops_the_run_and_still_prints_a_partial_report() {
 }
 
 #[test]
+#[cfg(feature = "yaml")]
 fn shipped_example_scenario_runs_with_headers() {
     // Regression test: YAML files with `headers:` used to panic.
     let server = HttpServer::start("ok");

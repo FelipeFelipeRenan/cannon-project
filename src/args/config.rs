@@ -2,6 +2,16 @@ use clap::{parser::ValueSource, ArgMatches};
 
 use super::parser::{Args, FileConfig};
 
+#[cfg(feature = "yaml")]
+fn parse_yaml(text: &str) -> Result<FileConfig, Box<dyn std::error::Error>> {
+    Ok(serde_yaml::from_str(text)?)
+}
+
+#[cfg(not(feature = "yaml"))]
+fn parse_yaml(_text: &str) -> Result<FileConfig, Box<dyn std::error::Error>> {
+    Err("this build of Cannon was compiled without --config (YAML) support".into())
+}
+
 /// Merges values from a YAML configuration file into the parsed arguments.
 ///
 /// Command-line arguments take precedence over values loaded from the
@@ -17,7 +27,7 @@ pub fn merge_with_yaml(
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(config_path) = &args.config {
         let yaml_str = std::fs::read_to_string(config_path)?;
-        let conf: FileConfig = serde_yaml::from_str(&yaml_str)?;
+        let conf = parse_yaml(&yaml_str)?;
 
         if let Some(url) = conf.url {
             if !was_provided_by_cli(matches, "url") {
@@ -252,7 +262,7 @@ fn was_provided_by_cli(matches: &ArgMatches, id: &str) -> bool {
     matches.value_source(id) == Some(ValueSource::CommandLine)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "yaml"))]
 mod tests {
     use super::*;
     use clap::{CommandFactory, FromArgMatches};
@@ -472,5 +482,16 @@ no_color: true
         merge_with_yaml(&mut args, &matches).unwrap();
 
         assert_eq!(args.workers, 10);
+    }
+}
+
+#[cfg(all(test, not(feature = "yaml")))]
+mod no_yaml_tests {
+    use super::*;
+
+    #[test]
+    fn config_files_are_refused_clearly_without_the_yaml_feature() {
+        let error = parse_yaml("workers: 1").unwrap_err().to_string();
+        assert!(error.contains("without --config"), "{error}");
     }
 }

@@ -322,6 +322,16 @@ pub fn render_ascii_histogram(hist: &hdrhistogram::Histogram<u64>) {
 ///
 /// Returns an [`std::io::Error`] if the generated HTML cannot be written
 /// to the specified path.
+#[cfg(not(feature = "html"))]
+pub fn generate_html_report(_path: &str, _report_json: &str) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "this build of Cannon was compiled without --html support",
+    ))
+}
+
+/// Writes the self-contained HTML dashboard (see the `html` feature).
+#[cfg(feature = "html")]
 pub fn generate_html_report(path: &str, report_json: &str) -> std::io::Result<()> {
     let template = include_str!("../../templates/dashboard.html");
 
@@ -870,6 +880,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "html")]
     fn html_report_is_self_contained() {
         let path = std::env::temp_dir().join(format!("cannon-offline-{}.html", std::process::id()));
 
@@ -885,6 +896,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "html")]
     fn html_report_escapes_script_terminators() {
         let path =
             std::env::temp_dir().join(format!("cannon-html-report-{}.html", std::process::id()));

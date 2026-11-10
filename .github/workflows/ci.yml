@@ -134,3 +134,25 @@ jobs:
 
       - name: Run cargo audit
         run: cargo audit
+
+  minimal:
+    name: Minimal features
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Clippy without default features
+        run: cargo clippy --locked --all-targets --no-default-features -- -D warnings
+
+      - name: Test without default features
+        run: cargo test --locked --no-default-features

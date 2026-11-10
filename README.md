@@ -111,6 +111,24 @@ The binary will be available at:
 target/release/cannon
 ```
 
+#### Smaller builds
+
+Optional capabilities are Cargo features, all enabled by default:
+
+| Feature  | Adds                                             |
+| -------- | ------------------------------------------------ |
+| `update` | `--update` (self-update from GitHub releases)    |
+| `yaml`   | `--config file.yaml`                             |
+| `html`   | `--html report.html` (embeds Chart.js, ~200 KB)  |
+
+```bash
+cargo build --release --no-default-features                  # HTTP/TCP load testing, JSON/CSV reports
+cargo build --release --no-default-features --features yaml  # ...plus config files
+```
+
+The minimal build is about 4.7 MB instead of 10.4 MB and pulls in 180 crates
+instead of 223. A disabled option still parses and fails with a clear message.
+
 ---
 
 # 🚀 Quick Start
