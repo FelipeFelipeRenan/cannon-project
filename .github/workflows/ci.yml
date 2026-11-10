@@ -156,3 +156,35 @@ jobs:
 
       - name: Test without default features
         run: cargo test --locked --no-default-features
+
+  musl:
+    name: Static musl build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust with the musl target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Install musl toolchain
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build a minimal static binary
+        run: cargo build --locked --release --no-default-features --target x86_64-unknown-linux-musl
+
+      - name: Check that the binary is static and runs
+        run: |
+          bin=target/x86_64-unknown-linux-musl/release/cannon
+          file "$bin"
+          ! ldd "$bin" 2>/dev/null | grep -q "=>" || { echo "binary is dynamically linked"; exit 1; }
+          "$bin" --version
+          python3 -m http.server 8971 --bind 127.0.0.1 >/dev/null 2>&1 &
+          sleep 1
+          "$bin" -u http://127.0.0.1:8971/ -c 200 -w 10 --threads 1 --no-color

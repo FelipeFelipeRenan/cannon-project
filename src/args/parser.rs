@@ -347,6 +347,13 @@ pub struct Args {
     #[arg(long, help_heading = "Runtime")]
     pub pin_threads: bool,
 
+    /// Number of runtime threads (default: one per CPU core).
+    ///
+    /// `--threads 1` runs everything on a single thread, which uses the least
+    /// memory and CPU and is enough for modest loads on small machines.
+    #[arg(long, value_name = "N", help_heading = "Runtime")]
+    pub threads: Option<usize>,
+
     /// Update Cannon to the latest available version.
     #[arg(long, help_heading = "Maintenance")]
     pub update: bool,
@@ -372,6 +379,13 @@ impl Args {
 
         if self.workers > MAX_WORKERS {
             return Err(format!("workers must be at most {MAX_WORKERS}"));
+        }
+
+        if self
+            .threads
+            .is_some_and(|threads| threads == 0 || threads > 1024)
+        {
+            return Err("threads must be between 1 and 1024".to_string());
         }
 
         if self.rps == Some(0) {
@@ -589,6 +603,9 @@ pub struct FileConfig {
 
     /// Pin Tokio worker threads to CPU cores.
     pub pin_threads: Option<bool>,
+
+    /// Number of runtime threads.
+    pub threads: Option<usize>,
 }
 
 /// Parses a ramp-up duration from a human-readable value.

@@ -129,6 +129,11 @@ cargo build --release --no-default-features --features yaml  # ...plus config fi
 The minimal build is about 4.7 MB instead of 10.4 MB and pulls in 180 crates
 instead of 223. A disabled option still parses and fails with a clear message.
 
+On small machines, `--threads 1` runs the whole test on a single thread (the
+lightest mode, enough for modest loads). CI builds the minimal binary as a
+fully static `x86_64-unknown-linux-musl` executable, the starting point for
+container-from-scratch and unikernel images.
+
 ---
 
 # 🚀 Quick Start

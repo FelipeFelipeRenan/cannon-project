@@ -90,16 +90,34 @@ fn raise_fd_limit() -> Option<u64> {
     None
 }
 
-/// Builds the Tokio runtime, optionally pinning its threads to CPU cores.
+/// Builds the Tokio runtime, optionally limiting its threads or pinning them
+/// to CPU cores.
+///
+/// `--threads 1` selects the single-threaded scheduler, which avoids the
+/// cross-thread machinery entirely and is the lightest option.
 pub fn build_runtime(args: &Args) -> AppResult<tokio::runtime::Runtime> {
+    if args.threads == Some(1) && !args.pin_threads {
+        return Ok(tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?);
+    }
+
     if !args.pin_threads {
-        return Ok(tokio::runtime::Runtime::new()?);
+        return Ok(match args.threads {
+            Some(threads) => tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .worker_threads(threads)
+                .build()?,
+            None => tokio::runtime::Runtime::new()?,
+        });
     }
 
     let core_ids = core_affinity::get_core_ids()
         .filter(|ids| !ids.is_empty())
         .ok_or("could not read the CPU topology required by --pin-threads")?;
-    let core_count = core_ids.len();
+    let core_count = args
+        .threads
+        .map_or(core_ids.len(), |threads| threads.min(core_ids.len()));
     let core_idx = Arc::new(AtomicUsize::new(0));
 
     println!(

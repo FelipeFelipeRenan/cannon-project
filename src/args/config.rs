@@ -207,6 +207,12 @@ pub fn merge_with_yaml(
             }
         }
 
+        if let Some(threads) = conf.threads {
+            if !was_provided_by_cli(matches, "threads") {
+                args.threads = Some(threads);
+            }
+        }
+
         if let Some(pin_threads) = conf.pin_threads {
             if !was_provided_by_cli(matches, "pin_threads") {
                 args.pin_threads = pin_threads;

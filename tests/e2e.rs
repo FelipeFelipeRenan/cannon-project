@@ -1331,3 +1331,42 @@ fn start_http_server_with_delay(delay: Duration) -> String {
 
     address
 }
+
+#[test]
+fn a_single_threaded_runtime_completes_closed_and_paced_runs() {
+    let address = start_http_server_with_delay(Duration::from_millis(1));
+    let url = format!("http://{address}/");
+
+    for extra in [&[][..], &["--rps", "200"][..]] {
+        let report = temp_path("one-thread.json");
+        let mut args = vec![
+            "-u",
+            url.as_str(),
+            "-c",
+            "200",
+            "-w",
+            "20",
+            "--threads",
+            "1",
+            "--no-color",
+            "-o",
+            report.to_str().unwrap(),
+        ];
+        args.extend_from_slice(extra);
+
+        let output = run_cannon(&args);
+
+        assert!(output.status.success(), "{}", stderr(&output));
+        assert_eq!(read_json(&report)["total_requests"], 200);
+
+        let _ = std::fs::remove_file(report);
+    }
+}
+
+#[test]
+fn an_invalid_thread_count_is_rejected() {
+    let output = run_cannon(&["-u", "http://127.0.0.1:1", "--threads", "0"]);
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("threads must be between 1 and 1024"));
+}
