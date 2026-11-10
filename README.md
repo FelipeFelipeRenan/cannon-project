@@ -451,7 +451,7 @@ Cannon exposes a deliberately small command-line interface.
 | `--cert`, `--key`   | PEM client certificate and key (mutual TLS) |
 | `--no-proxy`        | Ignore `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` |
 | `--no-color`        | Disable colored output               |
-| `--expect`          | Response assertion                   |
+| `--expect`          | Response assertion                    (searched in the first 1 MiB of the body) |
 | `--percentiles`     | Custom latency percentiles           |
 | `--apdex-t`         | Apdex threshold                      |
 | `-o, --output`      | JSON report                          |

@@ -424,28 +424,45 @@ impl Target {
                 }
 
                 match req.send().await {
-                    Ok(resp) => {
+                    Ok(mut resp) => {
                         let status = resp.status().as_u16();
-                        let (error_msg, bytes_recv, assert_ok) = match resp.bytes().await {
-                            Ok(bytes) => {
-                                let mut err = None;
-                                let mut ok = true;
-                                if let Some(expected) = expected_body {
-                                    let text = String::from_utf8_lossy(&bytes);
 
-                                    if !text.contains(expected.as_ref().as_str()) {
-                                        err = Some(format!("Mismatch: missing '{}'", expected));
+                        // The body is streamed, never buffered whole: a huge
+                        // or endless response must not exhaust memory. Only
+                        // when `--expect` needs to search it is it kept, up
+                        // to a fixed limit.
+                        let keep = expected_body.as_ref().map(|_| MAX_ASSERT_BODY);
+
+                        let (error_msg, bytes_recv, assert_ok) =
+                            match read_body(&mut resp, keep).await {
+                                Ok(body) => {
+                                    let mut err = None;
+                                    let mut ok = true;
+
+                                    if body.overflowed {
+                                        err = Some(format!(
+                                            "Response Too Large: the body exceeds {} bytes, \
+                                             the most that can be searched for --expect",
+                                            MAX_ASSERT_BODY
+                                        ));
                                         ok = false;
+                                    } else if let Some(expected) = expected_body {
+                                        let text = String::from_utf8_lossy(&body.kept);
+
+                                        if !text.contains(expected.as_ref().as_str()) {
+                                            err = Some(format!("Mismatch: missing '{}'", expected));
+                                            ok = false;
+                                        }
                                     }
+
+                                    (err, body.total, ok)
                                 }
-                                (err, bytes.len() as u64, ok)
-                            }
-                            Err(e) => (
-                                Some(format!("Read Error: {}", e)),
-                                0,
-                                expected_body.is_none(),
-                            ),
-                        };
+                                Err(e) => (
+                                    Some(format!("Read Error: {}", e)),
+                                    0,
+                                    expected_body.is_none(),
+                                ),
+                            };
                         TargetResult {
                             duration: start.elapsed(),
                             status_code: Some(status),
@@ -581,6 +598,52 @@ impl StatusFilter {
             .iter()
             .any(|&(low, high)| (low..=high).contains(&status))
     }
+}
+
+/// Largest response body that is kept in memory to search for `--expect`.
+const MAX_ASSERT_BODY: usize = 1024 * 1024;
+
+/// What [`read_body`] saw of a response body.
+struct BodyRead {
+    /// Bytes retained for assertions (empty unless a limit was given).
+    kept: Vec<u8>,
+    /// Bytes received so far.
+    total: u64,
+    /// The body was longer than the retention limit; reading stopped.
+    overflowed: bool,
+}
+
+/// Reads a response body chunk by chunk.
+///
+/// With `keep = None` the chunks are counted and dropped, so memory use does
+/// not depend on the body size. With `Some(limit)` up to `limit` bytes are
+/// retained; as soon as the body is longer, reading stops (dropping the rest
+/// of the connection) and `overflowed` is set.
+async fn read_body(
+    response: &mut reqwest::Response,
+    keep: Option<usize>,
+) -> Result<BodyRead, reqwest::Error> {
+    let mut body = BodyRead {
+        kept: Vec::new(),
+        total: 0,
+        overflowed: false,
+    };
+
+    while let Some(chunk) = response.chunk().await? {
+        body.total += chunk.len() as u64;
+
+        if let Some(limit) = keep {
+            if body.kept.len() + chunk.len() > limit {
+                body.overflowed = true;
+
+                break;
+            }
+
+            body.kept.extend_from_slice(&chunk);
+        }
+    }
+
+    Ok(body)
 }
 
 /// Turns a `reqwest` error into a short, actionable category.
@@ -1154,5 +1217,89 @@ mod tests {
         assert!(StatusFilter::parse("abc").is_err());
         assert!(StatusFilter::parse("99").is_err());
         assert!(StatusFilter::parse("6xx").is_err());
+    }
+
+    /// Serves one HTTP response with a `size`-byte body to every request.
+    async fn serve_body(size: usize) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+
+                tokio::spawn(async move {
+                    let mut buffer = [0u8; 1024];
+
+                    if stream.read(&mut buffer).await.unwrap_or(0) == 0 {
+                        return;
+                    }
+
+                    let head = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {size}\r\nConnection: close\r\n\r\n"
+                    );
+
+                    let _ = stream.write_all(head.as_bytes()).await;
+
+                    let chunk = vec![b'a'; 64 * 1024];
+                    let mut left = size;
+
+                    while left > 0 {
+                        let step = left.min(chunk.len());
+
+                        if stream.write_all(&chunk[..step]).await.is_err() {
+                            return;
+                        }
+
+                        left -= step;
+                    }
+                });
+            }
+        });
+
+        format!("http://{address}/")
+    }
+
+    fn http_target(url: String, expected: Option<&str>) -> Target {
+        Target::new_http(
+            reqwest::Client::new(),
+            url,
+            reqwest::Method::GET,
+            Arc::new(Vec::new()),
+            expected.map(|text| Arc::new(text.to_string())),
+        )
+    }
+
+    #[tokio::test]
+    async fn large_bodies_are_counted_without_being_kept() {
+        let url = serve_body(5 * 1024 * 1024).await;
+        let result = http_target(url, None).fire(&[]).await;
+
+        assert!(result.success, "{:?}", result.error);
+        assert_eq!(result.bytes_received, 5 * 1024 * 1024);
+    }
+
+    #[tokio::test]
+    async fn bodies_too_large_to_search_fail_with_a_clear_error() {
+        let url = serve_body(5 * 1024 * 1024).await;
+        let result = http_target(url, Some("needle")).fire(&[]).await;
+
+        assert!(!result.success);
+        assert!(!result.assertion_success);
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap()
+                .starts_with("Response Too Large"),
+            "{:?}",
+            result.error
+        );
+        assert!(
+            result.bytes_received < 5 * 1024 * 1024,
+            "reading must stop early"
+        );
     }
 }

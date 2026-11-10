@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🐛 Fixed
 
+- **Unbounded memory on large responses:** every response body was read fully into memory, so an endless or very large body exhausted the machine (5.2 GB in 2 s with 20 workers against an endless stream). Bodies are now streamed and counted (memory stays flat, ~61 MB in the same test); with `--expect` only the first 1 MiB is searched, and larger bodies fail with `Response Too Large`.
 - **Opaque HTTP errors:** timeouts, DNS failures, refused connections, TLS errors and exhausted file descriptors were all reported as "error sending request". They now appear as `Timeout`, `DNS Error`, `TLS Error`, `Connection Refused`, `Connection Reset`, `File Descriptor Limit`, `Invalid Request`, ... with the underlying cause.
 - **Invalid input:** `--rps 4000000000` panicked and `-w 4000000000` hung. Both are now bounded (`rps` ≤ 10 000 000, `workers` ≤ 100 000), and malformed `-H` values (no colon, invalid name/value) are rejected up front instead of silently failing every request.
 - **Redirects:** they were followed silently, so each reported request could cost several hits on the server. Redirects are no longer followed; the 3xx response is reported as is.
