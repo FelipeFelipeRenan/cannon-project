@@ -5,6 +5,12 @@ All notable changes to Cannon will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🚀 Added
+
+- Cargo features `update`, `yaml` and `html` (all on by default). `--no-default-features` builds a 4.7 MB binary (10.4 MB by default) with 180 instead of 223 dependencies, for constrained machines.
+
 ## [2.2.0] - Unreleased
 
 ### 🐛 Fixed

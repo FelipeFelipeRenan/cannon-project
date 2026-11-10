@@ -22,8 +22,13 @@ fn run() -> AppResult<ExitCode> {
     let mut args = Args::from_arg_matches(&matches)?;
 
     if args.update {
-        app::update::update()?;
-        return Ok(ExitCode::SUCCESS);
+        #[cfg(feature = "update")]
+        {
+            app::update::update()?;
+            return Ok(ExitCode::SUCCESS);
+        }
+        #[cfg(not(feature = "update"))]
+        return Err("this build of Cannon was compiled without --update support".into());
     }
 
     cannon::args::config::merge_with_yaml(&mut args, &matches)?;

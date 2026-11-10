@@ -16,6 +16,7 @@ pub mod finish;
 pub mod plan;
 pub mod session;
 pub mod signals;
+#[cfg(feature = "update")]
 pub mod update;
 
 use crate::args::parser::Args;
