@@ -153,6 +153,19 @@ That's it.
 
 ---
 
+## 🩺 Check before you fire
+
+```bash
+cannon -u https://api.example.com/health --check
+```
+
+Validates the configuration, connects and sends **one** request without
+generating load; the exit status is 1 when it fails. Useful before a long run
+or in a CI step. `--print-config` prints the effective settings (config file
+merged with the command line, header values hidden) and exits.
+
+---
+
 ## 🎯 Constant-RPS workload
 
 Generate **100 requests per second**:
