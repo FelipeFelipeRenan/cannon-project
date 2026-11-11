@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🚀 Added
 
+- The progress bar now shows the running response-time p50 and p99 next to the throughput, read from the live histograms every 500 ms without touching the workers' hot path.
 - `--block-private` (also in YAML): refuses targets that are or resolve to loopback, private, link-local (cloud metadata), CGNAT or unique-local addresses, including through HTTP redirects and DNS answers.
 - `--check` sends a single request and reports the result without generating load (exit 1 on failure); `--print-config` shows the effective configuration with header values hidden.
 - Cargo features `update`, `yaml` and `html` (all on by default). `--no-default-features` builds a 4.7 MB binary (10.4 MB by default) with 180 instead of 223 dependencies, for constrained machines.

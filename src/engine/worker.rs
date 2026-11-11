@@ -4,7 +4,7 @@ use crate::payload::generator::PayloadTemplate;
 use hdrhistogram::Histogram;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinError;
@@ -30,6 +30,8 @@ pub struct SharedMetrics {
     pub bytes_received: AtomicU64,
     /// Number of measured requests completed.
     pub measured_requests: AtomicU64,
+    /// Response-time histograms of the measurement phase, for live display.
+    live: OnceLock<Arc<Vec<ShardHistograms>>>,
     cancel: watch::Sender<bool>,
 }
 
@@ -41,12 +43,29 @@ impl Default for SharedMetrics {
             bytes_sent: AtomicU64::new(0),
             bytes_received: AtomicU64::new(0),
             measured_requests: AtomicU64::new(0),
+            live: OnceLock::new(),
             cancel: watch::channel(false).0,
         }
     }
 }
 
 impl SharedMetrics {
+    /// Approximate response-time percentiles (µs) of what has been measured
+    /// so far, for each quantile in `0.0..=1.0`.
+    ///
+    /// Reads the live counters without stopping the workers. Returns `None`
+    /// before the measurement phase starts or while nothing has completed.
+    pub fn live_percentiles(&self, quantiles: &[f64]) -> Option<Vec<u64>> {
+        let shards = self.live.get()?;
+        let mut totals = vec![0; crate::engine::histogram::counter_count()];
+
+        for shard in shards.iter() {
+            shard.response.add_counts_to(&mut totals);
+        }
+
+        crate::engine::histogram::quantiles_from_counts(&totals, quantiles)
+    }
+
     /// Returns `true` once a graceful stop has been requested.
     pub fn is_cancelled(&self) -> bool {
         *self.cancel.borrow()
@@ -591,6 +610,11 @@ async fn run_phase(config: PhaseConfig) -> Result<Vec<WorkerResult>, JoinError> 
 
     let shards: Arc<Vec<ShardHistograms>> =
         Arc::new((0..shard_count).map(|_| ShardHistograms::new()).collect());
+
+    // Only the measured phase is shown live (warm-up is discarded anyway).
+    if count.is_some() {
+        let _ = shared_metrics.live.set(shards.clone());
+    }
 
     let mut handles = Vec::with_capacity(workers as usize);
 
