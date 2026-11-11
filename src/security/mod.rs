@@ -5,3 +5,6 @@
 
 /// Target URL validation and extraction.
 pub mod url_validator;
+
+/// `--block-private`: refusing internal addresses.
+pub mod private;

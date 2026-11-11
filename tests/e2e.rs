@@ -1429,3 +1429,83 @@ fn print_config_shows_the_effective_values_and_hides_header_values() {
     assert!(!text.contains("super-secret"), "{text}");
     assert_eq!(server.requests(), 0);
 }
+
+#[test]
+fn block_private_refuses_local_http_and_tcp_targets_without_connecting() {
+    let server = HttpServer::start("ok");
+
+    let output = run_cannon(&["-u", &server.url(), "-c", "10", "--block-private"]);
+
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("--block-private"),
+        "{}",
+        stderr(&output)
+    );
+    assert_eq!(server.requests(), 0);
+
+    let output = run_cannon(&[
+        "--mode",
+        "tcp",
+        "-u",
+        "127.0.0.1:9",
+        "--body",
+        "ping",
+        "-c",
+        "10",
+        "--block-private",
+    ]);
+
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("--block-private"),
+        "{}",
+        stderr(&output)
+    );
+
+    // Even the localhost name is caught without a DNS lookup.
+    let output = run_cannon(&["-u", "http://localhost:9/", "--check", "--block-private"]);
+
+    assert!(!output.status.success());
+}
+
+#[test]
+fn local_targets_are_fine_without_block_private() {
+    let server = HttpServer::start("ok");
+
+    let output = run_cannon(&["-u", &server.url(), "-c", "5", "-w", "1", "--no-color"]);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(server.requests(), 5);
+}
+
+#[test]
+fn diff_compares_two_saved_results_and_fails_on_a_regression() {
+    let before = temp_path("diff-before.json");
+    let after = temp_path("diff-after.json");
+    let worse = temp_path("diff-worse.json");
+
+    std::fs::write(
+        &before,
+        r#"{"p99_ms": 10.0, "requests_per_second": 1000.0}"#,
+    )
+    .unwrap();
+    std::fs::write(&after, r#"{"p99_ms": 10.2, "requests_per_second": 990.0}"#).unwrap();
+    std::fs::write(&worse, r#"{"p99_ms": 20.0, "requests_per_second": 500.0}"#).unwrap();
+
+    let ok = run_cannon(&["--diff", before.to_str().unwrap(), after.to_str().unwrap()]);
+    assert!(ok.status.success(), "{}{}", stdout(&ok), stderr(&ok));
+    assert!(stdout(&ok).contains("no regression"));
+
+    let bad = run_cannon(&["--diff", before.to_str().unwrap(), worse.to_str().unwrap()]);
+    assert_eq!(bad.status.code(), Some(2), "{}", stdout(&bad));
+    assert!(stdout(&bad).contains("slower"));
+
+    let missing = run_cannon(&["--diff", before.to_str().unwrap(), "/nonexistent.json"]);
+    assert!(!missing.status.success());
+    assert!(stderr(&missing).contains("cannot read"));
+
+    for path in [before, after, worse] {
+        let _ = std::fs::remove_file(path);
+    }
+}

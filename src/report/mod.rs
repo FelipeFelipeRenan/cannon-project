@@ -6,6 +6,9 @@
 /// Command-line reporting utilities.
 pub mod cli;
 
+/// Comparison of two saved results (`--diff`).
+pub mod diff;
+
 /// Pass/fail evaluation for CI pipelines (baselines and error-rate limits).
 pub mod gate;
 

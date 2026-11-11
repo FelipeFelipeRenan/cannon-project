@@ -47,6 +47,48 @@ fn counter_floor(index: u64) -> u64 {
     sub_bucket << bucket
 }
 
+/// Number of counters in every [`AtomicHistogram`].
+#[must_use]
+pub const fn counter_count() -> usize {
+    COUNTERS
+}
+
+/// Approximate value (µs) at each quantile in `0.0..=1.0`, from merged
+/// counters (see [`AtomicHistogram::add_counts_to`]).
+///
+/// The result is the lowest value of the counter holding the quantile, so it
+/// can sit up to 0.1% below the exact value; meant for live display only.
+/// Returns `None` when nothing was recorded.
+#[must_use]
+pub fn quantiles_from_counts(totals: &[u64], quantiles: &[f64]) -> Option<Vec<u64>> {
+    let total: u64 = totals.iter().sum();
+
+    if total == 0 {
+        return None;
+    }
+
+    let mut result = Vec::with_capacity(quantiles.len());
+
+    for quantile in quantiles {
+        let rank = ((quantile.clamp(0.0, 1.0) * total as f64).ceil() as u64).max(1);
+        let mut seen = 0;
+        let mut value = 0;
+
+        for (index, count) in totals.iter().enumerate() {
+            seen += count;
+
+            if seen >= rank {
+                value = counter_floor(index as u64);
+                break;
+            }
+        }
+
+        result.push(value);
+    }
+
+    Some(result)
+}
+
 /// Fixed-size, lock-free histogram of microsecond values.
 pub struct AtomicHistogram {
     counters: Box<[AtomicU64]>,
@@ -72,6 +114,15 @@ impl AtomicHistogram {
         let index = counter_index(value_us.min(MAX_VALUE_US)) as usize;
 
         self.counters[index].fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Adds this histogram's counters to `totals` (one slot per counter, see
+    /// [`counter_count`]). Safe while writers are still recording; the result
+    /// is a close, not an exact, snapshot.
+    pub fn add_counts_to(&self, totals: &mut [u64]) {
+        for (total, counter) in totals.iter_mut().zip(self.counters.iter()) {
+            *total += counter.load(Ordering::Relaxed);
+        }
     }
 
     /// Converts the counters into an `HdrHistogram` (same precision).
@@ -100,6 +151,32 @@ impl AtomicHistogram {
 mod tests {
     use super::*;
     use std::sync::Arc;
+
+    #[test]
+    fn live_quantiles_are_close_to_the_exact_ones() {
+        let histogram = AtomicHistogram::new();
+
+        for value in 1..=10_000u64 {
+            histogram.record(value);
+        }
+
+        let mut totals = vec![0; counter_count()];
+        histogram.add_counts_to(&mut totals);
+
+        let live = quantiles_from_counts(&totals, &[0.5, 0.99, 1.0]).unwrap();
+        let exact = histogram.export();
+
+        for (live, quantile) in live.iter().zip([0.5, 0.99, 1.0]) {
+            let exact = exact.value_at_quantile(quantile) as f64;
+
+            assert!(
+                (*live as f64 - exact).abs() / exact < 0.002,
+                "q{quantile}: live {live} vs exact {exact}"
+            );
+        }
+
+        assert!(quantiles_from_counts(&vec![0; counter_count()], &[0.5]).is_none());
+    }
 
     #[test]
     fn layout_matches_hdrhistogram() {

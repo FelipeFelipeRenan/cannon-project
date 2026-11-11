@@ -113,7 +113,7 @@ pub async fn run(args: &Args, plan: &RunPlan, target: Arc<Target>) -> AppResult<
 
                 if elapsed >= 0.1 && total > last_total {
                     let rps = (total - last_total) as f64 / elapsed;
-                    pb.set_message(format!("| ⚡ {:.1} RPS", rps));
+                    pb.set_message(progress_message(rps, &shared_metrics));
                     last_total = total;
                     last_time = Instant::now();
                 }
@@ -161,4 +161,47 @@ pub async fn run(args: &Args, plan: &RunPlan, target: Arc<Target>) -> AppResult<
         interrupted_status,
         aborted,
     })
+}
+
+/// The text next to the progress bar: throughput and, once there is data,
+/// the running p50/p99 of response time.
+fn progress_message(rps: f64, metrics: &SharedMetrics) -> String {
+    match metrics.live_percentiles(&[0.5, 0.99]).as_deref() {
+        Some(&[p50, p99]) => format!(
+            "| ⚡ {rps:.1} RPS | p50 {} p99 {}",
+            format_live_latency(p50),
+            format_live_latency(p99)
+        ),
+        _ => format!("| ⚡ {rps:.1} RPS"),
+    }
+}
+
+fn format_live_latency(micros: u64) -> String {
+    if micros >= 1_000_000 {
+        format!("{:.2}s", micros as f64 / 1_000_000.0)
+    } else if micros >= 1_000 {
+        format!("{:.1}ms", micros as f64 / 1_000.0)
+    } else {
+        format!("{micros}µs")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_latency_uses_a_readable_unit() {
+        assert_eq!(format_live_latency(850), "850µs");
+        assert_eq!(format_live_latency(12_340), "12.3ms");
+        assert_eq!(format_live_latency(2_500_000), "2.50s");
+    }
+
+    #[test]
+    fn the_message_has_no_percentiles_before_any_data() {
+        assert_eq!(
+            progress_message(10.0, &SharedMetrics::default()),
+            "| ⚡ 10.0 RPS"
+        );
+    }
 }

@@ -12,6 +12,7 @@
 
 pub mod check;
 pub mod csv_export;
+pub mod diff;
 pub mod environment;
 pub mod finish;
 pub mod plan;

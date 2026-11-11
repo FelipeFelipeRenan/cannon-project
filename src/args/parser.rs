@@ -354,6 +354,28 @@ pub struct Args {
     #[arg(long, value_name = "N", help_heading = "Runtime")]
     pub threads: Option<usize>,
 
+    /// Refuse targets that are, or resolve to, private or local addresses.
+    ///
+    /// Blocks loopback, private ranges, link-local (cloud metadata), CGNAT and
+    /// unique-local IPv6, including through redirects and DNS answers. Use it
+    /// when Cannon runs where it must not reach the internal network.
+    #[arg(long, help_heading = "Target")]
+    pub block_private: bool,
+
+    /// Compare two saved results and exit (no test is run).
+    ///
+    /// Takes the JSON written by `-o` or a baseline file. Exits with status 2
+    /// when the second one has a p99 slower than `--tolerance` or a higher
+    /// error rate.
+    #[arg(
+        long,
+        num_args = 2,
+        value_names = ["BEFORE", "AFTER"],
+        value_hint = ValueHint::FilePath,
+        help_heading = "Baselines"
+    )]
+    pub diff: Option<Vec<String>>,
+
     /// Send a single request, report the result and exit.
     ///
     /// Validates the configuration, resolves and connects to the target and
@@ -621,6 +643,9 @@ pub struct FileConfig {
 
     /// Number of runtime threads.
     pub threads: Option<usize>,
+
+    /// Refuse private and local targets.
+    pub block_private: Option<bool>,
 }
 
 /// Parses a ramp-up duration from a human-readable value.
