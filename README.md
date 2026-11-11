@@ -321,6 +321,11 @@ To stop early instead of waiting for the whole run, use
 `--abort-on-error-rate <PERCENT>`: once at least 20 requests were measured and
 the error rate exceeds the limit, the test is cancelled and exits with status 2.
 
+To compare two saved results without running anything, use
+`--diff BEFORE AFTER` with the files written by `-o` or `--save-baseline`. It
+prints p99, throughput and error rate side by side and exits with status 2 when
+`AFTER` has a p99 slower than `--tolerance` or a higher error rate.
+
 ---
 
 # 📊 What Cannon Measures

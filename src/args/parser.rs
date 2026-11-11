@@ -362,6 +362,20 @@ pub struct Args {
     #[arg(long, help_heading = "Target")]
     pub block_private: bool,
 
+    /// Compare two saved results and exit (no test is run).
+    ///
+    /// Takes the JSON written by `-o` or a baseline file. Exits with status 2
+    /// when the second one has a p99 slower than `--tolerance` or a higher
+    /// error rate.
+    #[arg(
+        long,
+        num_args = 2,
+        value_names = ["BEFORE", "AFTER"],
+        value_hint = ValueHint::FilePath,
+        help_heading = "Baselines"
+    )]
+    pub diff: Option<Vec<String>>,
+
     /// Send a single request, report the result and exit.
     ///
     /// Validates the configuration, resolves and connects to the target and

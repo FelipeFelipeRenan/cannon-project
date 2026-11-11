@@ -31,6 +31,10 @@ fn run() -> AppResult<ExitCode> {
         return Err("this build of Cannon was compiled without --update support".into());
     }
 
+    if let Some(files) = &args.diff {
+        return app::diff::run(files, args.tolerance);
+    }
+
     cannon::args::config::merge_with_yaml(&mut args, &matches)?;
     args.validate()
         .map_err(|error| format!("invalid configuration: {error}"))?;
