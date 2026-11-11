@@ -166,6 +166,19 @@ merged with the command line, header values hidden) and exits.
 
 ---
 
+## 🔒 Keeping Cannon away from internal networks
+
+`--block-private` refuses targets that are, or resolve to, loopback, private
+ranges, link-local (cloud metadata at `169.254.169.254`), carrier-grade NAT and
+unique-local IPv6. For HTTP it also applies to DNS answers and redirects
+(`--max-redirects`), so a public name cannot be rebound to an internal address.
+For TCP the address is checked once, before the run. Intended for shared runners
+and, later, agents that take their targets from someone else. If a proxy is
+configured in the environment, add `--no-proxy`, otherwise the proxy decides
+where the connection goes.
+
+---
+
 ## 🎯 Constant-RPS workload
 
 Generate **100 requests per second**:

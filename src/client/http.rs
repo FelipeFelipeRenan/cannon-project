@@ -19,14 +19,16 @@ pub fn build_optimized_client(args: &Args) -> Result<Client, String> {
         // Redirects would silently multiply the traffic (each one is another
         // request) while being reported as a single response, so they are
         // surfaced as the 3xx responses they are.
-        .redirect(if args.max_redirects == 0 {
-            reqwest::redirect::Policy::none()
-        } else {
-            reqwest::redirect::Policy::limited(args.max_redirects)
-        })
+        .redirect(redirect_policy(args))
         .user_agent(&args.user_agent)
         .connect_timeout(Duration::from_millis(args.connect_timeout))
         .timeout(Duration::from_millis(args.timeout));
+
+    if args.block_private {
+        builder = builder.dns_resolver(std::sync::Arc::new(
+            crate::security::private::PublicOnlyResolver,
+        ));
+    }
 
     if args.no_proxy {
         builder = builder.no_proxy();
@@ -70,4 +72,32 @@ pub fn build_optimized_client(args: &Args) -> Result<Client, String> {
     builder
         .build()
         .map_err(|error| format!("cannot build the HTTP client: {error}"))
+}
+
+fn redirect_policy(args: &Args) -> reqwest::redirect::Policy {
+    if args.max_redirects == 0 {
+        return reqwest::redirect::Policy::none();
+    }
+
+    let limit = args.max_redirects;
+
+    if !args.block_private {
+        return reqwest::redirect::Policy::limited(limit);
+    }
+
+    // Redirects to an IP literal never go through the DNS resolver, so they
+    // are checked here.
+    reqwest::redirect::Policy::custom(move |attempt| {
+        if attempt.previous().len() >= limit {
+            attempt.error("too many redirects")
+        } else if attempt
+            .url()
+            .host_str()
+            .is_some_and(crate::security::private::is_private_literal)
+        {
+            attempt.error("--block-private: redirect to a private address")
+        } else {
+            attempt.follow()
+        }
+    })
 }

@@ -207,6 +207,12 @@ pub fn merge_with_yaml(
             }
         }
 
+        if let Some(block_private) = conf.block_private {
+            if !was_provided_by_cli(matches, "block_private") {
+                args.block_private = block_private;
+            }
+        }
+
         if let Some(threads) = conf.threads {
             if !was_provided_by_cli(matches, "threads") {
                 args.threads = Some(threads);

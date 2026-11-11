@@ -354,6 +354,14 @@ pub struct Args {
     #[arg(long, value_name = "N", help_heading = "Runtime")]
     pub threads: Option<usize>,
 
+    /// Refuse targets that are, or resolve to, private or local addresses.
+    ///
+    /// Blocks loopback, private ranges, link-local (cloud metadata), CGNAT and
+    /// unique-local IPv6, including through redirects and DNS answers. Use it
+    /// when Cannon runs where it must not reach the internal network.
+    #[arg(long, help_heading = "Target")]
+    pub block_private: bool,
+
     /// Send a single request, report the result and exit.
     ///
     /// Validates the configuration, resolves and connects to the target and
@@ -621,6 +629,9 @@ pub struct FileConfig {
 
     /// Number of runtime threads.
     pub threads: Option<usize>,
+
+    /// Refuse private and local targets.
+    pub block_private: Option<bool>,
 }
 
 /// Parses a ramp-up duration from a human-readable value.

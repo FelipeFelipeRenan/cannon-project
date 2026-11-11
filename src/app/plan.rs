@@ -49,6 +49,10 @@ impl RunPlan {
                 .map_err(|error| format!("invalid target URL: {error}"))?
         };
 
+        if args.block_private {
+            check_not_private(&url, is_tcp)?;
+        }
+
         let percentiles = args
             .percentiles
             .split(',')
@@ -167,4 +171,24 @@ fn load_baseline(path: &str) -> AppResult<Baseline> {
         .map_err(|error| format!("cannot read baseline '{path}': {error}"))?;
 
     Baseline::parse(&content).map_err(|error| format!("baseline '{path}': {error}").into())
+}
+
+/// Applies `--block-private` to the target before anything connects to it.
+fn check_not_private(target: &str, is_tcp: bool) -> AppResult<()> {
+    use crate::security::private::{ensure_public, split_host_port};
+
+    if is_tcp {
+        let (host, port) = split_host_port(target)
+            .ok_or("--block-private: the TCP target must look like host:port")?;
+
+        return Ok(ensure_public(host, port)?);
+    }
+
+    let parsed = url::Url::parse(target).map_err(|error| format!("invalid target URL: {error}"))?;
+    let host = parsed.host_str().ok_or("target URL must contain a host")?;
+
+    Ok(ensure_public(
+        host,
+        parsed.port_or_known_default().unwrap_or(80),
+    )?)
 }
