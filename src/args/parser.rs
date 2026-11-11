@@ -11,7 +11,7 @@ use serde::Deserialize;
 ///
 /// Configuration can also be loaded from a YAML file through [`FileConfig`].
 /// The application combines both sources before starting the load test.
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(
     author,
     version,
@@ -353,6 +353,21 @@ pub struct Args {
     /// memory and CPU and is enough for modest loads on small machines.
     #[arg(long, value_name = "N", help_heading = "Runtime")]
     pub threads: Option<usize>,
+
+    /// Send a single request, report the result and exit.
+    ///
+    /// Validates the configuration, resolves and connects to the target and
+    /// fires one request without generating any load. Exits with status 1
+    /// when the request fails.
+    #[arg(long, help_heading = "Diagnostics")]
+    pub check: bool,
+
+    /// Print the effective configuration and exit.
+    ///
+    /// Shows the values that would be used after merging the config file and
+    /// the command line. Header values are hidden.
+    #[arg(long, help_heading = "Diagnostics")]
+    pub print_config: bool,
 
     /// Update Cannon to the latest available version.
     #[arg(long, help_heading = "Maintenance")]

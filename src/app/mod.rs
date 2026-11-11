@@ -10,6 +10,7 @@
 //! 3. [`session`]: the run itself (engine, progress, signals);
 //! 4. [`finish`]: summary, report files and the performance gate.
 
+pub mod check;
 pub mod csv_export;
 pub mod environment;
 pub mod finish;
@@ -38,6 +39,15 @@ pub async fn run(args: Args) -> AppResult<ExitCode> {
     // Fail fast: everything that can be checked before the (possibly long)
     // test starts is checked here, not after it.
     let plan = RunPlan::prepare(&args)?;
+
+    if args.print_config {
+        check::print_config(&args, &plan);
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    if args.check {
+        return check::run(&args, &plan).await;
+    }
 
     print_intro(&args, &plan);
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🚀 Added
 
+- `--check` sends a single request and reports the result without generating load (exit 1 on failure); `--print-config` shows the effective configuration with header values hidden.
 - Cargo features `update`, `yaml` and `html` (all on by default). `--no-default-features` builds a 4.7 MB binary (10.4 MB by default) with 180 instead of 223 dependencies, for constrained machines.
 - `--threads <N>` (also in YAML): `1` uses the single-threaded Tokio scheduler, the lightest mode for small machines. CI now also builds a static musl binary.
 

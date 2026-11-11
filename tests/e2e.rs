@@ -1370,3 +1370,62 @@ fn an_invalid_thread_count_is_rejected() {
     assert!(!output.status.success());
     assert!(stderr(&output).contains("threads must be between 1 and 1024"));
 }
+
+#[test]
+fn check_sends_exactly_one_request() {
+    let server = HttpServer::start("ok");
+
+    let output = run_cannon(&[
+        "-u",
+        &server.url(),
+        "-c",
+        "100000",
+        "-w",
+        "50",
+        "--check",
+        "--no-color",
+    ]);
+
+    assert!(output.status.success(), "{}", stdout(&output));
+    assert!(stdout(&output).contains("request succeeded"));
+    assert_eq!(server.requests(), 1);
+}
+
+#[test]
+fn check_fails_with_a_reason_when_the_target_is_down() {
+    let output = run_cannon(&["-u", &unused_port_url(), "--check", "--no-color"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stdout(&output).contains("request failed"),
+        "{}",
+        stdout(&output)
+    );
+}
+
+#[test]
+fn print_config_shows_the_effective_values_and_hides_header_values() {
+    let server = HttpServer::start("ok");
+
+    let output = run_cannon(&[
+        "-u",
+        &server.url(),
+        "-w",
+        "7",
+        "--rps",
+        "50",
+        "-H",
+        "Authorization: Bearer super-secret",
+        "--print-config",
+        "--no-color",
+    ]);
+
+    let text = stdout(&output);
+
+    assert!(output.status.success(), "{text}");
+    assert!(text.contains("workers") && text.contains('7'), "{text}");
+    assert!(text.contains("open-loop, 50 req/s"), "{text}");
+    assert!(text.contains("Authorization (values hidden)"), "{text}");
+    assert!(!text.contains("super-secret"), "{text}");
+    assert_eq!(server.requests(), 0);
+}
