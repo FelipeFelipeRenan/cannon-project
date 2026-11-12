@@ -279,7 +279,6 @@ mod tests {
     use super::*;
     use clap::{CommandFactory, FromArgMatches};
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn parse_args(arguments: &[&str]) -> (Args, ArgMatches) {
         let mut argv = vec!["cannon"];
@@ -292,12 +291,13 @@ mod tests {
     }
 
     fn write_temp_config(contents: &str) -> String {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
+        // A timestamp is not unique enough: macOS clocks tick in microseconds,
+        // so parallel tests could share a name and delete each other's file.
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let unique = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let path = std::env::temp_dir().join(format!("cannon-test-{timestamp}.yaml"));
+        let path =
+            std::env::temp_dir().join(format!("cannon-test-{}-{unique}.yaml", std::process::id()));
 
         fs::write(&path, contents).unwrap();
 
