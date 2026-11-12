@@ -30,6 +30,7 @@ pub fn finish(args: &Args, plan: &RunPlan, completed: Completed) -> AppResult<Ex
         metrics,
         interrupted_status,
         aborted,
+        overload_warning,
     } = completed;
 
     let summary = RunSummary::aggregate(worker_results, &metrics, duration, args.rps.is_some())?;
@@ -41,6 +42,10 @@ pub fn finish(args: &Args, plan: &RunPlan, completed: Completed) -> AppResult<Ex
         &plan.percentiles,
         args.apdex_t,
     );
+
+    if let Some(warning) = &overload_warning {
+        println!("\n{}", warning.yellow().bold());
+    }
 
     // Reports are always written, even when the gate fails, so that CI can
     // attach them to the failed job.

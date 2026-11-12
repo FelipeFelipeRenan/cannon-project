@@ -696,6 +696,24 @@ A reference microbenchmark is documented in
 **580k req/s** over persistent localhost TCP connections (one-byte request and
 response, 250 workers, 8 isolated client CPUs, WSL2), with p99 around 1.1 ms.
 
+### Resource footprint
+
+What Cannon itself costs (the target is not counted). Measured with
+[`scripts/footprint.py`](scripts/footprint.py) on a 2-vCPU Linux VM, against a
+Node.js HTTP server on the same machine, 200 000 requests, median of 3 runs:
+
+| Scenario                         | Peak memory | CPU per request |
+| -------------------------------- | ----------: | --------------: |
+| closed loop, 200 workers         |       24 MB |         ~21 µs  |
+| closed loop, 2000 workers        |      124 MB |         ~22 µs  |
+| closed loop, 5000 workers        |      288 MB |         ~31 µs  |
+| 200 workers, `--threads 1`       |       19 MB |         ~21 µs  |
+
+Memory grows with the number of connections (about 55 KB each, mostly HTTP
+client buffers), not with the number of requests. CPU per request is noisy on a
+machine shared with the target, so compare runs of the same setup rather than
+quoting the absolute figure.
+
 This is a **microbenchmark**, not a promise. Real throughput depends on network
 distance, payload size, server work, TLS and protocol. Use
 [`scripts/bench.sh`](scripts/bench.sh) to measure on your own hardware, and

@@ -25,6 +25,9 @@ pub struct Side {
     p99_ms: f64,
     #[serde(default)]
     max_ms: Option<f64>,
+    /// Layout version of the file; missing in files from old releases.
+    #[serde(default)]
+    schema_version: u32,
 }
 
 impl Side {
@@ -34,9 +37,13 @@ impl Side {
     ///
     /// Returns a description when the JSON is invalid or has no `p99_ms`.
     pub fn parse(json: &str) -> Result<Self, String> {
-        serde_json::from_str(json).map_err(|error| {
+        let side: Self = serde_json::from_str(json).map_err(|error| {
             format!("not a Cannon result or baseline file (needs p99_ms): {error}")
-        })
+        })?;
+
+        crate::report::gate::check_schema_version(side.schema_version, "file")?;
+
+        Ok(side)
     }
 }
 

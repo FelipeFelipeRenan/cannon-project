@@ -2,6 +2,7 @@
 //! termination signals.
 
 use super::csv_export::{self, CsvWriter};
+use super::lag::LagProbe;
 use super::plan::RunPlan;
 use super::signals::shutdown_signal;
 use super::AppResult;
@@ -26,6 +27,8 @@ pub struct Completed {
     pub interrupted_status: Option<u8>,
     /// Why the run was stopped early by `--abort-on-error-rate`, if it was.
     pub aborted: Option<String>,
+    /// Warning when Cannon itself was too busy to measure accurately.
+    pub overload_warning: Option<String>,
 }
 
 /// `--abort-on-error-rate` is only evaluated after this many requests, so a
@@ -61,6 +64,8 @@ pub async fn run(args: &Args, plan: &RunPlan, target: Arc<Target>) -> AppResult<
         csv_tx = Some(tx);
         csv_handle = Some(handle);
     }
+
+    let (lag_probe, lag_task) = LagProbe::start();
 
     let mut engine_handle = tokio::spawn(run_workers(
         args.count,
@@ -155,7 +160,10 @@ pub async fn run(args: &Args, plan: &RunPlan, target: Arc<Target>) -> AppResult<
         }
     }
 
+    lag_task.abort();
+
     Ok(Completed {
+        overload_warning: lag_probe.warning(),
         worker_results,
         duration,
         metrics: shared_metrics,

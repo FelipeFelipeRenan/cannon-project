@@ -360,7 +360,15 @@ impl Target {
     }
 
     async fn connect(address: &str, connect_timeout: Duration) -> Result<TcpStream, String> {
-        match tokio::time::timeout(connect_timeout, TcpStream::connect(address)).await {
+        let attempt = async {
+            if crate::security::private::public_only() {
+                crate::security::private::connect_public(address).await
+            } else {
+                TcpStream::connect(address).await
+            }
+        };
+
+        match tokio::time::timeout(connect_timeout, attempt).await {
             Ok(Ok(stream)) => Ok(stream),
             Ok(Err(error)) => Err(error.to_string()),
             Err(_) => Err(format!("connection timed out after {connect_timeout:?}")),

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-12
+
+### 🔒 Security
+
+- `--block-private` closes three gaps found in an audit: it no longer uses a proxy (a proxy resolves the target itself and sidestepped the check), TCP targets are re-resolved and filtered on every (re)connect instead of only once at startup, and more non-public ranges are refused (NAT64 and 6to4 wrapping private IPv4, `240.0.0.0/4`, `198.18.0.0/15`, `192.0.0.0/24`, documentation ranges, IPv6 site-local, IPv4-compatible IPv6).
+- Release binaries and `SHA256SUMS` now carry a signed build-provenance attestation; see `SECURITY.md` for `gh attestation verify`.
+
+### ✅ Reliability of results
+
+- Cannon warns when it was itself overloaded (a probe on its own scheduler found many late wake-ups), since that delay would otherwise be reported as target latency.
+- Baseline and `--diff` files written by a newer Cannon are refused with a clear message instead of being misread; files without a version still work.
+- New end-to-end tests check that a server with a known 40 ms delay is measured as ~40 ms, and that a server stall shows up in the open-loop response time but not in the service time (coordinated omission).
+
 ### ⚡ Performance
 
 - **Memory:** the allocator (mimalloc) is now tuned before its first allocation: eager arena commit and transparent huge pages are off. Resident memory drops by 27–41% for the same work (200 workers: 41 → 24 MB; 2000: ~190 → ~120 MB; 5000: ~360 → ~263 MB) with no CPU cost.
@@ -21,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--threads <N>` (also in YAML): `1` uses the single-threaded Tokio scheduler, the lightest mode for small machines. CI now also builds a static musl binary.
 - `--diff BEFORE AFTER`: compares two saved results (p99, throughput, error rate) and exits with status 2 on a regression.
 
-## [2.2.0] - Unreleased
+## [2.2.0] - 2026-10-31
 
 ### 🐛 Fixed
 
