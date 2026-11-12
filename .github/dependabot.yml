@@ -6,9 +6,23 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      rust-minor-and-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # The ref of this action is the Rust toolchain it installs ("1.88.0" is
+      # the MSRV job). Bumping it would silently change the minimum supported
+      # Rust version, so it is updated by hand.
+      - dependency-name: "dtolnay/rust-toolchain"
+    groups:
+      actions:
+        patterns:
+          - "*"

@@ -96,6 +96,8 @@ jobs:
 
     permissions:
       contents: write
+      id-token: write      # keyless signing (Sigstore) of the provenance
+      attestations: write
 
     steps:
       - name: Download release artifacts
@@ -111,6 +113,13 @@ jobs:
 
           echo "Generated checksums:"
           cat SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            release-assets/cannon-*
+            release-assets/SHA256SUMS
 
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
