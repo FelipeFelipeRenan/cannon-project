@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ⚡ Performance
+
+- **Memory:** the allocator (mimalloc) is now tuned before its first allocation: eager arena commit and transparent huge pages are off. Resident memory drops by 27–41% for the same work (200 workers: 41 → 24 MB; 2000: ~190 → ~120 MB; 5000: ~360 → ~263 MB) with no CPU cost.
+- **`--csv`:** rows are formatted straight into a buffer and sent to the writer in batches of 32 instead of one by one. Context switches drop ~3.7x (169k → 46k per 200k requests) and the CPU overhead of `--csv` goes from ~18% to ~5%. The `csv` crate is no longer a dependency; the file format is unchanged.
+
 ### 🚀 Added
 
 - The progress bar now shows the running response-time p50 and p99 next to the throughput, read from the live histograms every 500 ms without touching the workers' hot path.
