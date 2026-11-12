@@ -26,4 +26,15 @@ as practical and credited to the reporter unless you prefer otherwise.
 - `--insecure` disables TLS certificate verification by design; do not use it
   against production endpoints you do not control.
 - Release binaries ship with a `SHA256SUMS` file, and `install.sh` verifies it
-  before installing.
+  before installing. The checksum only detects corruption: it comes from the
+  same release as the binary.
+- From the next release on, binaries and `SHA256SUMS` carry a signed build
+  provenance attestation (Sigstore, produced by the release workflow). To check
+  that a binary was built from this repository's workflow:
+
+  ```bash
+  gh attestation verify cannon-linux-x64 --repo FelipeFelipeRenan/cannon-project
+  ```
+
+  `cannon --update` does not verify this yet; if that matters for you, download
+  the binary and verify it manually.

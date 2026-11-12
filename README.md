@@ -94,6 +94,8 @@ sudo mv cannon-linux-x64 /usr/local/bin/cannon
 
 The installer script picks the right binary for your OS and CPU and verifies
 its SHA-256 checksum. On Windows, download the `.exe` from the Releases page.
+Release binaries also carry a signed build attestation; see
+[SECURITY.md](SECURITY.md) for how to verify it with `gh attestation verify`.
 
 ### 🦀 Build from source
 
