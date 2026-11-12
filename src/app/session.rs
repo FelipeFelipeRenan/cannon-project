@@ -49,7 +49,8 @@ pub async fn run(args: &Args, plan: &RunPlan, target: Arc<Target>) -> AppResult<
 
     let shared_metrics = Arc::new(SharedMetrics::default());
 
-    let buffer_size = std::cmp::min(args.workers as usize, 10_000).max(1);
+    // Each slot holds a batch of rows, so a few hundred keep the writer busy.
+    let buffer_size = (args.workers as usize / 4).clamp(16, 4_096);
 
     let mut csv_tx = None;
     let mut csv_handle: Option<CsvWriter> = None;
