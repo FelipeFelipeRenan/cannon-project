@@ -1509,3 +1509,130 @@ fn diff_compares_two_saved_results_and_fails_on_a_regression() {
         let _ = std::fs::remove_file(path);
     }
 }
+
+/// An HTTP server that is healthy except during one window, when every
+/// answer is held back until the window ends (a GC pause, a failover, ...).
+fn start_stalling_http_server(stall_from: Duration, stall_until: Duration) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let origin = Instant::now();
+
+    thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            thread::spawn(move || {
+                let mut buffer = [0u8; 8192];
+                let mut pending = Vec::new();
+
+                loop {
+                    match stream.read(&mut buffer) {
+                        Ok(0) | Err(_) => return,
+                        Ok(read) => pending.extend_from_slice(&buffer[..read]),
+                    }
+
+                    while let Some(end) = find_head_end(&pending) {
+                        pending.drain(..end);
+
+                        let now = origin.elapsed();
+                        if now >= stall_from && now < stall_until {
+                            thread::sleep(stall_until - now);
+                        }
+
+                        let response = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+
+                        if stream.write_all(response.as_bytes()).is_err() {
+                            return;
+                        }
+                    }
+                }
+            });
+        }
+    });
+
+    address
+}
+
+#[test]
+fn measured_latency_matches_a_known_server_delay() {
+    // The measurement is only worth anything if it is right: a server that
+    // takes 40 ms must be reported as taking ~40 ms, never less.
+    let address = start_http_server_with_delay(Duration::from_millis(40));
+    let report = temp_path("known-delay.json");
+
+    let output = run_cannon(&[
+        "-u",
+        &format!("http://{address}/"),
+        "-c",
+        "100",
+        "-w",
+        "10",
+        "-o",
+        report.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+
+    let json = read_json(&report);
+    let p50 = json["p50_ms"].as_f64().unwrap();
+    let service_p50 = json["service_time"]["p50_ms"].as_f64().unwrap();
+
+    assert!(
+        (39.0..150.0).contains(&p50),
+        "p50 {p50} ms for a 40 ms server"
+    );
+    assert!(
+        (39.0..150.0).contains(&service_p50),
+        "service p50 {service_p50} ms for a 40 ms server"
+    );
+
+    let _ = std::fs::remove_file(report);
+}
+
+#[test]
+fn a_server_stall_shows_up_in_open_loop_latency_not_only_in_service_time() {
+    // Coordinated omission: with --rps, requests that *should* have started
+    // during the stall waited for it, so the response-time tail must show the
+    // stall. The plain request duration (service time) of the few requests
+    // that were actually in flight cannot: that is the number a closed-loop
+    // tool would report.
+    let address =
+        start_stalling_http_server(Duration::from_millis(500), Duration::from_millis(1500));
+    let report = temp_path("stall.json");
+
+    let output = run_cannon(&[
+        "-u",
+        &format!("http://{address}/"),
+        "-c",
+        "300",
+        "-w",
+        "2",
+        "--rps",
+        "100",
+        "--warmup",
+        "0",
+        "-o",
+        report.to_str().unwrap(),
+    ]);
+
+    assert!(
+        output.status.success(),
+        "{}{}",
+        stdout(&output),
+        stderr(&output)
+    );
+
+    let json = read_json(&report);
+    let response_p99 = json["p99_ms"].as_f64().unwrap();
+    let service_p99 = json["service_time"]["p99_ms"].as_f64().unwrap();
+
+    assert_eq!(json["latency_mode"], "open-loop");
+    assert!(
+        response_p99 >= 400.0,
+        "the stall must be visible in response time, p99 was {response_p99} ms"
+    );
+    assert!(
+        service_p99 < response_p99 / 2.0,
+        "service p99 {service_p99} ms should hide what response p99 {response_p99} ms shows"
+    );
+
+    let _ = std::fs::remove_file(report);
+}

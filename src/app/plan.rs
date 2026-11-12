@@ -49,6 +49,8 @@ impl RunPlan {
                 .map_err(|error| format!("invalid target URL: {error}"))?
         };
 
+        crate::security::private::set_public_only(args.block_private);
+
         if args.block_private {
             check_not_private(&url, is_tcp)?;
         }

@@ -15,6 +15,7 @@ pub mod csv_export;
 pub mod diff;
 pub mod environment;
 pub mod finish;
+pub mod lag;
 pub mod plan;
 pub mod session;
 pub mod signals;

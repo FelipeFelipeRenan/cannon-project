@@ -68,6 +68,8 @@ impl Baseline {
         let baseline: Self = serde_json::from_str(json)
             .map_err(|error| format!("invalid baseline file: {error}"))?;
 
+        check_schema_version(baseline.schema_version, "baseline")?;
+
         if !baseline.p99_ms.is_finite() || baseline.p99_ms <= 0.0 {
             return Err("baseline 'p99_ms' must be a number greater than 0".to_string());
         }
@@ -78,6 +80,26 @@ impl Baseline {
 
         Ok(baseline)
     }
+}
+
+/// Refuses files written by a newer Cannon, whose layout this one may misread.
+///
+/// Files without a version (written by old releases) are accepted.
+///
+/// # Errors
+///
+/// Returns a message asking to update Cannon when `found` is newer.
+pub fn check_schema_version(found: u32, what: &str) -> Result<(), String> {
+    let newest = BASELINE_SCHEMA_VERSION.max(crate::report::cli::REPORT_SCHEMA_VERSION);
+
+    if found > newest {
+        return Err(format!(
+            "this {what} uses layout version {found}, but this Cannon understands up to \
+             {newest}; update Cannon (cannon --update) to read it"
+        ));
+    }
+
+    Ok(())
 }
 
 /// Below this many successful requests a p99 is just "one of the slowest few".
@@ -270,6 +292,16 @@ mod tests {
         assert!(!outcome.passed());
         assert!(outcome.failures[0].contains("Regression detected"));
         assert!(outcome.failures[0].contains("tolerance of 10.00%"));
+    }
+
+    #[test]
+    fn baselines_from_a_newer_cannon_are_refused_but_unversioned_ones_work() {
+        let newer = r#"{"schema_version":99,"p99_ms":10.0,"rps":1.0,"error_rate_percent":0.0}"#;
+        let error = Baseline::parse(newer).unwrap_err();
+        assert!(error.contains("update Cannon"), "{error}");
+
+        let old = r#"{"p99_ms":10.0,"rps":1.0}"#;
+        assert!(Baseline::parse(old).is_ok());
     }
 
     #[test]

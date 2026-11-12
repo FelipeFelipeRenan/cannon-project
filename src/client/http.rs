@@ -30,7 +30,9 @@ pub fn build_optimized_client(args: &Args) -> Result<Client, String> {
         ));
     }
 
-    if args.no_proxy {
+    // A proxy resolves the target itself, which would sidestep the resolver
+    // above, so --block-private never uses one.
+    if args.no_proxy || args.block_private {
         builder = builder.no_proxy();
     }
 
