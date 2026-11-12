@@ -31,6 +31,8 @@ html = []                      # `--html report.html` (embeds Chart.js, ~200 KB)
 
 [dependencies]
 mimalloc = { version = "0.1", default-features = false }
+# Pinned exactly: `allocator_tuning` in src/main.rs sets options by index.
+libmimalloc-sys = { version = "=0.1.49", default-features = false, features = ["extended"] }
 tokio = { version = "1.52.3", features = ["full"] }
 reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls", "http2"] }
 clap = { version = "4.6.1", features = ["derive"] }
